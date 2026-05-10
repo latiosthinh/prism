@@ -23,6 +23,10 @@ import {
   AnthropicStepRunner,
   StepRunner,
 } from "../engine/runner/step-runner.js";
+import {
+  PiSdkStepRunner,
+  PiSdkRunnerConfig,
+} from "../engine/runner/pi-sdk-runner.js";
 import { RunStore } from "../engine/runner/cascade-reject.js";
 import { LoopOrchestrator } from "../engine/orchestrator/loop-orchestrator.js";
 import { StateMachine } from "../engine/orchestrator/state-machine.js";
@@ -65,6 +69,10 @@ export interface BridgeLogger {
 export interface BridgeConfig {
   workspaceRoot: string;
   apiKey?: string;
+  backend?: "cursor" | "pi" | "anthropic";
+  piProvider?: string;
+  piModel?: string;
+  piApiKey?: string;
   onStateUpdate: (state: BridgeState) => void;
   onAgentEvent: (event: AgentEvent) => void;
   onAgentStatus: (status: AgentStatus) => void;
@@ -391,6 +399,10 @@ export class EngineBridge {
 
   private readonly _workspaceRoot: string;
   private readonly _apiKey?: string;
+  private readonly _backend: "cursor" | "pi" | "anthropic";
+  private readonly _piProvider: string;
+  private readonly _piModel: string;
+  private readonly _piApiKey?: string;
   private readonly _log: BridgeLogger;
   private readonly _onStateUpdate: BridgeConfig["onStateUpdate"];
   private readonly _onAgentEvent: BridgeConfig["onAgentEvent"];
@@ -414,6 +426,10 @@ export class EngineBridge {
   constructor(config: BridgeConfig, log: BridgeLogger) {
     this._workspaceRoot = config.workspaceRoot;
     this._apiKey = config.apiKey;
+    this._backend = config.backend || "cursor";
+    this._piProvider = config.piProvider || "anthropic";
+    this._piModel = config.piModel || "claude-sonnet-4-20250514";
+    this._piApiKey = config.piApiKey;
     this._log = log;
     this._onStateUpdate = config.onStateUpdate;
     this._onAgentEvent = config.onAgentEvent;
@@ -425,18 +441,45 @@ export class EngineBridge {
     this._registry = new AgentRegistry(this._workspaceRoot);
     this._skillLoader = new SkillLoader(this._workspaceRoot);
     this._runStore = new RunStore(this._workspaceRoot);
-    this._runner = config.apiKey
-      ? new CursorSdkStepRunner(config.apiKey)
-      : new CursorSdkStepRunner();
+    this._runner = this.createRunner(this._backend);
     this._orchestrator = new LoopOrchestrator();
     this._machine = new StateMachine();
   }
 
+  private createRunner(backend: "cursor" | "pi" | "anthropic"): StepRunner {
+    switch (backend) {
+      case "pi":
+        if (!this._piApiKey) {
+          throw new Error("Pi SDK requires aidlc.piApiKey to be set");
+        }
+        return new PiSdkStepRunner({
+          apiKey: this._piApiKey,
+          provider: this._piProvider,
+          model: this._piModel,
+        });
+      case "anthropic":
+        return this._apiKey
+          ? new AnthropicStepRunner(this._apiKey)
+          : new AnthropicStepRunner();
+      case "cursor":
+      default:
+        return this._apiKey
+          ? new CursorSdkStepRunner(this._apiKey)
+          : new CursorSdkStepRunner();
+    }
+  }
+
   updateApiKey(apiKey: string | undefined): void {
     (this as any)._apiKey = apiKey;
-    this._runner = apiKey
-      ? new CursorSdkStepRunner(apiKey)
-      : new CursorSdkStepRunner();
+    this._runner = this.createRunner(this._backend);
+  }
+
+  updateBackend(backend: "cursor" | "pi" | "anthropic", options?: { piProvider?: string; piModel?: string; piApiKey?: string }): void {
+    (this as any)._backend = backend;
+    if (options?.piProvider) (this as any)._piProvider = options.piProvider;
+    if (options?.piModel) (this as any)._piModel = options.piModel;
+    if (options?.piApiKey) (this as any)._piApiKey = options.piApiKey;
+    this._runner = this.createRunner(backend);
   }
 
   ensureSkeletonExists(): void {
