@@ -3,6 +3,10 @@ import { Icon } from "./Icon.js";
 
 export interface AidlcSettings {
   apiKey: string;
+  backend: "cursor" | "pi" | "anthropic";
+  piProvider: string;
+  piModel: string;
+  piApiKey: string;
   model: string;
   modelOverride: string;
   maxTokens: number;
@@ -43,6 +47,10 @@ const MODELS = [
 
 const EMPTY: AidlcSettings = {
   apiKey: "",
+  backend: "cursor",
+  piProvider: "anthropic",
+  piModel: "claude-sonnet-4-20250514",
+  piApiKey: "",
   model: "composer-2",
   modelOverride: "",
   maxTokens: 8192,
@@ -238,6 +246,84 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
                 {verifyResult.message}
               </pre>
             )}
+          </div>
+        )}
+      </section>
+
+      {/* Backend Selection */}
+      <section className="bg-[#18181b] border border-[#27272a] rounded p-lg space-y-md">
+        <header className="flex items-center gap-sm">
+          <Icon name="memory" className="text-primary" size={20} />
+          <h3 className="font-headline-sm text-headline-sm font-semibold text-on-surface">
+            AI Backend
+          </h3>
+        </header>
+        <p className="text-on-surface-variant text-body-sm">
+          Choose which AI backend to use for pipeline steps. Pi SDK supports 30+ providers.
+        </p>
+
+        <div>
+          <label className="font-label-caps text-label-caps uppercase tracking-widest text-on-surface-variant mb-xs block">
+            Backend
+          </label>
+          <select
+            value={draft.backend}
+            onChange={(e) => update("backend", e.target.value as "cursor" | "pi" | "anthropic")}
+            className="w-full bg-surface-container-high border border-outline-variant text-on-surface text-body-sm rounded p-sm focus:border-primary outline-none"
+          >
+            <option value="cursor">Cursor SDK (composer-2 model)</option>
+            <option value="pi">Pi SDK (multi-provider support)</option>
+            <option value="anthropic">Anthropic API (direct Claude access)</option>
+          </select>
+        </div>
+
+        {draft.backend === "pi" && (
+          <div className="space-y-md pt-md border-t border-[#27272a]">
+            <div>
+              <label className="font-label-caps text-label-caps uppercase tracking-widest text-on-surface-variant mb-xs block">
+                Pi Provider
+              </label>
+              <input
+                type="text"
+                value={draft.piProvider}
+                onChange={(e) => update("piProvider", e.target.value)}
+                placeholder="anthropic, openai, google, etc."
+                className="w-full bg-surface-container-high border border-outline-variant text-on-surface text-body-sm rounded p-sm focus:border-primary outline-none font-mono-code"
+              />
+              <p className="text-[11px] text-on-surface-variant mt-xs">
+                Provider ID from pi-ai (anthropic, openai, google, mistral, etc.)
+              </p>
+            </div>
+
+            <div>
+              <label className="font-label-caps text-label-caps uppercase tracking-widest text-on-surface-variant mb-xs block">
+                Pi Model
+              </label>
+              <input
+                type="text"
+                value={draft.piModel}
+                onChange={(e) => update("piModel", e.target.value)}
+                placeholder="claude-sonnet-4-20250514"
+                className="w-full bg-surface-container-high border border-outline-variant text-on-surface text-body-sm rounded p-sm focus:border-primary outline-none font-mono-code"
+              />
+            </div>
+
+            <div>
+              <label className="font-label-caps text-label-caps uppercase tracking-widest text-on-surface-variant mb-xs block">
+                Pi API Key
+              </label>
+              <input
+                type="password"
+                value={draft.piApiKey}
+                onChange={(e) => update("piApiKey", e.target.value)}
+                placeholder="sk-ant-... or your provider's API key"
+                autoComplete="off"
+                className="w-full bg-surface-container-high border border-outline-variant text-on-surface text-body-sm rounded p-sm focus:border-primary outline-none font-mono-code"
+              />
+              <p className="text-[11px] text-on-surface-variant mt-xs">
+                API key for the selected provider
+              </p>
+            </div>
           </div>
         )}
       </section>
