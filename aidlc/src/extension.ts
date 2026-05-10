@@ -551,11 +551,19 @@ export function activate(context: vscode.ExtensionContext): void {
 
   const config = vscode.workspace.getConfiguration("aidlc");
   const apiKey = config.get<string>("apiKey", "");
+  const backend = config.get<"cursor" | "pi" | "anthropic">("backend", "cursor");
+  const piProvider = config.get<string>("piProvider", "anthropic");
+  const piModel = config.get<string>("piModel", "claude-sonnet-4-20250514");
+  const piApiKey = config.get<string>("piApiKey", "");
 
   const bridge = new EngineBridge(
     {
       workspaceRoot: wsRoot,
       apiKey: apiKey || undefined,
+      backend,
+      piProvider,
+      piModel,
+      piApiKey: piApiKey || undefined,
       onStateUpdate: (state: BridgeState) => {
         panel?.postMessage({ type: "stateUpdate", state });
       },
@@ -592,6 +600,22 @@ export function activate(context: vscode.ExtensionContext): void {
         log.appendLine(
           `[config] apiKey updated (length: ${freshKey.length})`,
         );
+      }
+      if (e.affectsConfiguration("aidlc.backend") ||
+          e.affectsConfiguration("aidlc.piProvider") ||
+          e.affectsConfiguration("aidlc.piModel") ||
+          e.affectsConfiguration("aidlc.piApiKey")) {
+        const freshConfig = vscode.workspace.getConfiguration("aidlc");
+        const backend = freshConfig.get<"cursor" | "pi" | "anthropic">("backend", "cursor");
+        const piProvider = freshConfig.get<string>("piProvider", "anthropic");
+        const piModel = freshConfig.get<string>("piModel", "claude-sonnet-4-20250514");
+        const piApiKey = freshConfig.get<string>("piApiKey", "");
+        bridge.updateBackend(backend, {
+          piProvider,
+          piModel,
+          piApiKey: piApiKey || undefined,
+        });
+        log.appendLine(`[config] backend updated to: ${backend}`);
       }
     }),
   );
