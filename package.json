@@ -1,0 +1,12 @@
+{
+  "name": "aidlc-opencode",
+  "private": true,
+  "workspaces": [
+    "packages/*",
+    "aidlc"
+  ],
+  "scripts": {
+    "build": "npm run build --workspace=@opencode-go/sdk && npm run build --workspace=aidlc",
+    "dev": "npm run dev --workspace=aidlc"
+  }
+}
