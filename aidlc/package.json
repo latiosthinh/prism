@@ -22,12 +22,39 @@
       { "command": "aidlc.showDecisionLog", "title": "AIDLC: Show Decision Log" },
       { "command": "aidlc.openSettings", "title": "AIDLC: Open Settings" },
       { "command": "aidlc.resumeRun", "title": "AIDLC: Resume Run" },
-      { "command": "aidlc.dryRun", "title": "AIDLC: Dry-Run Pipeline" }
+      { "command": "aidlc.dryRun", "title": "AIDLC: Dry-Run Pipeline" },
+      { "command": "aidlc.verifyCursorSdk", "title": "AIDLC: Verify Cursor SDK" }
     ],
     "configuration": {
       "title": "AIDLC",
       "properties": {
         "aidlc.apiKey": { "type": "string", "description": "Cursor API key for the Cursor SDK runner. Get one at cursor.com → Account → API Keys.", "default": "" },
+        "aidlc.backend": {
+          "type": "string",
+          "description": "AI backend to use for pipeline steps",
+          "default": "cursor",
+          "enum": ["cursor", "pi", "anthropic"],
+          "enumDescriptions": [
+            "Cursor SDK (composer-2 model)",
+            "Pi SDK (supports 30+ providers via pi-ai)",
+            "Anthropic API (direct Claude access)"
+          ]
+        },
+        "aidlc.piProvider": {
+          "type": "string",
+          "description": "Provider to use with Pi SDK (anthropic, openai, google, etc.)",
+          "default": "anthropic"
+        },
+        "aidlc.piModel": {
+          "type": "string",
+          "description": "Model to use with Pi SDK",
+          "default": "claude-sonnet-4-20250514"
+        },
+        "aidlc.piApiKey": {
+          "type": "string",
+          "description": "API key for Pi SDK backend. Required when backend is set to 'pi'.",
+          "default": ""
+        },
         "aidlc.model": {
           "type": "string", "description": "Model for agents (only used with Anthropic fallback; Cursor SDK uses composer-2)",
           "default": "claude-sonnet-4-20250514",
@@ -45,10 +72,10 @@
   },
   "scripts": {
     "build": "npm run build:extension && npm run build:panel",
-    "build:extension": "tsup src/extension.ts src/extension/engine-bridge.ts src/engine/index.ts src/engine/pipeline/schema.ts src/engine/pipeline/loader.ts src/engine/pipeline/validator.ts src/engine/orchestrator/state-machine.ts src/engine/orchestrator/sequential.ts src/engine/orchestrator/loop-orchestrator.ts src/engine/runner/step-runner.ts src/engine/runner/auto-reviewer.ts src/engine/runner/loop-manager.ts src/engine/runner/cascade-reject.ts src/engine/agents/builtins.ts src/engine/agents/registry.ts src/engine/artifacts/skill-loader.ts --external vscode --external @cursor/sdk --format cjs --out-dir dist --clean",
+    "build:extension": "tsup src/extension.ts src/extension/engine-bridge.ts src/engine/index.ts src/engine/pipeline/schema.ts src/engine/pipeline/loader.ts src/engine/pipeline/validator.ts src/engine/orchestrator/state-machine.ts src/engine/orchestrator/sequential.ts src/engine/orchestrator/loop-orchestrator.ts src/engine/runner/step-runner.ts src/engine/runner/pi-sdk-runner.ts src/engine/runner/auto-reviewer.ts src/engine/runner/loop-manager.ts src/engine/runner/cascade-reject.ts src/engine/agents/builtins.ts src/engine/agents/registry.ts src/engine/artifacts/skill-loader.ts --external vscode --external @cursor/sdk --external @opencode-go/sdk --external @earendil-works/pi-ai --external @earendil-works/pi-agent-core --format cjs --out-dir dist --clean",
     "build:panel": "vite build",
     "dev": "concurrently \"npm run dev:extension\" \"npm run dev:panel\"",
-    "dev:extension": "tsup src/extension.ts src/extension/engine-bridge.ts src/engine/index.ts src/engine/pipeline/schema.ts src/engine/pipeline/loader.ts src/engine/pipeline/validator.ts src/engine/orchestrator/state-machine.ts src/engine/orchestrator/sequential.ts src/engine/orchestrator/loop-orchestrator.ts src/engine/runner/step-runner.ts src/engine/runner/auto-reviewer.ts src/engine/runner/loop-manager.ts src/engine/runner/cascade-reject.ts src/engine/agents/builtins.ts src/engine/agents/registry.ts src/engine/artifacts/skill-loader.ts --external vscode --external @cursor/sdk --format cjs --out-dir dist --watch",
+    "dev:extension": "tsup src/extension.ts src/extension/engine-bridge.ts src/engine/index.ts src/engine/pipeline/schema.ts src/engine/pipeline/loader.ts src/engine/pipeline/validator.ts src/engine/orchestrator/state-machine.ts src/engine/orchestrator/sequential.ts src/engine/orchestrator/loop-orchestrator.ts src/engine/runner/step-runner.ts src/engine/runner/pi-sdk-runner.ts src/engine/runner/auto-reviewer.ts src/engine/runner/loop-manager.ts src/engine/runner/cascade-reject.ts src/engine/agents/builtins.ts src/engine/agents/registry.ts src/engine/artifacts/skill-loader.ts --external vscode --external @cursor/sdk --external @opencode-go/sdk --external @earendil-works/pi-ai --external @earendil-works/pi-agent-core --format cjs --out-dir dist --watch",
     "dev:panel": "vite build --watch",
     "lint": "eslint src",
     "test": "vitest",
@@ -57,6 +84,9 @@
   "dependencies": {
     "@anthropic-ai/sdk": "^0.39.0",
     "@cursor/sdk": "^1.0.12",
+    "@opencode-go/sdk": "file:../packages/opencode-sdk",
+    "@earendil-works/pi-ai": "^0.74.0",
+    "@earendil-works/pi-agent-core": "^0.74.0",
     "@xyflow/react": "^12.10.2",
     "gray-matter": "^4.0.3",
     "marked": "^15.0.4",
