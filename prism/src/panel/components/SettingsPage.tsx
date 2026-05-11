@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import { Icon } from "./Icon.js";
 
-export interface AidlcSettings {
+export interface PRISMSettings {
   apiKey: string;
   backend: "cursor" | "pi" | "anthropic";
   piProvider: string;
@@ -16,7 +16,7 @@ export interface AidlcSettings {
   commandConfirmation: boolean;
 }
 
-export interface AidlcVerifyResult {
+export interface PRISMVerifyResult {
   status: "ok" | "error";
   apiKeyLen?: number;
   modelsCount?: number;
@@ -25,10 +25,10 @@ export interface AidlcVerifyResult {
 }
 
 interface SettingsPageProps {
-  settings: AidlcSettings | null;
-  verifyResult: AidlcVerifyResult | null;
+  settings: PRISMSettings | null;
+  verifyResult: PRISMVerifyResult | null;
   verifyInFlight: boolean;
-  onSave: (next: Partial<AidlcSettings>) => void;
+  onSave: (next: Partial<PRISMSettings>) => void;
   onVerify: () => void;
   onRequestRefresh: () => void;
 }
@@ -45,7 +45,7 @@ const MODELS = [
   "gemini-2.5-pro-exp-03-25",
 ];
 
-const EMPTY: AidlcSettings = {
+const EMPTY: PRISMSettings = {
   apiKey: "",
   backend: "cursor",
   piProvider: "anthropic",
@@ -68,7 +68,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
   onVerify,
   onRequestRefresh,
 }) => {
-  const [draft, setDraft] = useState<AidlcSettings>(settings ?? EMPTY);
+  const [draft, setDraft] = useState<PRISMSettings>(settings ?? EMPTY);
   const [revealKey, setRevealKey] = useState(false);
   const [savedAt, setSavedAt] = useState<number | null>(null);
 
@@ -96,14 +96,14 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
 
   const dirty =
     !!settings &&
-    (Object.keys(draft) as (keyof AidlcSettings)[]).some(
+    (Object.keys(draft) as (keyof PRISMSettings)[]).some(
       (k) => draft[k] !== settings[k],
     );
   dirtyRef.current = dirty;
 
-  const update = <K extends keyof AidlcSettings>(
+  const update = <K extends keyof PRISMSettings>(
     key: K,
-    value: AidlcSettings[K],
+    value: PRISMSettings[K],
   ): void => {
     setDraft((prev) => ({ ...prev, [key]: value }));
   };
@@ -129,7 +129,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
           Settings
         </h2>
         <p className="text-on-surface-variant text-body-sm mt-xs">
-          Stored in VS Code workspace settings under <code>aidlc.*</code>.
+          Stored in VS Code workspace settings under <code>prism.*</code>.
         </p>
       </div>
 
@@ -193,7 +193,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
             className="border border-outline-variant text-on-surface px-lg py-sm rounded font-bold text-body-sm flex items-center gap-xs hover:border-primary disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
             title={
               draft.apiKey
-                ? "Run AIDLC: Verify Cursor SDK"
+                ? "Run PRISM: Verify Cursor SDK"
                 : "Save an API key first"
             }
           >
@@ -402,7 +402,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
             onChange={(v) => update("autoApproveYolo", v)}
           />
           <ToggleRow
-            label="Add .aidlc/ to .gitignore"
+            label="Add .PRISM/ to .gitignore"
             hint="Keep generated artifacts out of git."
             checked={draft.gitignoreArtifacts}
             onChange={(v) => update("gitignoreArtifacts", v)}

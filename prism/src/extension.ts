@@ -39,8 +39,8 @@ class PipelinePanel {
     this._wsRoot = wsRoot;
 
     this._panel = vscode.window.createWebviewPanel(
-      "aidlc.pipeline",
-      "AIDLC Pipeline",
+      "prism.pipeline",
+      "PRISM Pipeline",
       vscode.ViewColumn.One,
       {
         enableScripts: true,
@@ -134,7 +134,7 @@ class PipelinePanel {
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&family=JetBrains+Mono:wght@400;500&family=Geist:wght@500;600;700&display=swap" />
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200&display=block" />
   <link rel="stylesheet" href="${styleUri}" />
-  <title>AIDLC Pipeline</title>
+  <title>PRISM Pipeline</title>
 </head>
 <body>
   <div id="root"></div>
@@ -163,7 +163,7 @@ class PipelinePanel {
           const title: string | undefined = msg.title;
           const description: string | undefined = msg.description;
           const customRunId: string | undefined = msg.customRunId;
-          const freshConfig = vscode.workspace.getConfiguration("aidlc");
+          const freshConfig = vscode.workspace.getConfiguration("PRISM");
           const freshKey = freshConfig.get<string>("apiKey", "");
           if (freshKey) {
             this._bridge.updateApiKey(freshKey);
@@ -185,7 +185,7 @@ class PipelinePanel {
               this._log.appendLine(`[panel] startRun failed: ${m}`);
               this.postMessage({ type: "error", message: m });
               vscode.window.showErrorMessage(
-                `AIDLC: failed to start "${pipelineName}" — ${m}`,
+                `PRISM: failed to start "${pipelineName}" — ${m}`,
               );
             });
           break;
@@ -453,7 +453,7 @@ class PipelinePanel {
           const stepId: string = msg.stepId;
           const file = path.join(
             this._wsRoot,
-            ".aidlc",
+            ".PRISM",
             "runs",
             runId,
             "steps",
@@ -494,19 +494,19 @@ class PipelinePanel {
         case "getSettings": {
           this.postMessage({
             type: "settings",
-            settings: readAidlcSettings(),
+            settings: readPRISMSettings(),
           });
           break;
         }
         case "saveSettings": {
           try {
-            await writeAidlcSettings(msg.settings ?? {});
-            const fresh = readAidlcSettings();
+            await writePRISMSettings(msg.settings ?? {});
+            const fresh = readPRISMSettings();
             if (typeof fresh.apiKey === "string") {
               this._bridge.updateApiKey(fresh.apiKey || undefined);
             }
             this.postMessage({ type: "settings", settings: fresh });
-            vscode.window.showInformationMessage("AIDLC settings saved.");
+            vscode.window.showInformationMessage("PRISM settings saved.");
           } catch (err: any) {
             const msg2 = err?.message ?? String(err);
             this._log.appendLine(`[panel] saveSettings failed: ${msg2}`);
@@ -541,15 +541,15 @@ export function activate(context: vscode.ExtensionContext): void {
   const wsRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
   if (!wsRoot) {
     vscode.window.showWarningMessage(
-      "AIDLC requires an open workspace folder.",
+      "PRISM requires an open workspace folder.",
     );
     return;
   }
 
-  const log = vscode.window.createOutputChannel("AIDLC", { log: true });
+  const log = vscode.window.createOutputChannel("PRISM", { log: true });
   context.subscriptions.push(log);
 
-  const config = vscode.workspace.getConfiguration("aidlc");
+  const config = vscode.workspace.getConfiguration("PRISM");
   const apiKey = config.get<string>("apiKey", "");
   const backend = config.get<"cursor" | "pi" | "anthropic">("backend", "cursor");
   const piProvider = config.get<string>("piProvider", "anthropic");
@@ -578,7 +578,7 @@ export function activate(context: vscode.ExtensionContext): void {
       },
       onError: (error: string) => {
         log.appendLine(`[bridge] error: ${error}`);
-        vscode.window.showErrorMessage(`AIDLC: ${error}`);
+        vscode.window.showErrorMessage(`PRISM: ${error}`);
       },
     },
     log,
@@ -592,20 +592,20 @@ export function activate(context: vscode.ExtensionContext): void {
 
   context.subscriptions.push(
     vscode.workspace.onDidChangeConfiguration((e) => {
-      if (e.affectsConfiguration("aidlc.apiKey")) {
+      if (e.affectsConfiguration("prism.apiKey")) {
         const freshKey = vscode.workspace
-          .getConfiguration("aidlc")
+          .getConfiguration("PRISM")
           .get<string>("apiKey", "");
         bridge.updateApiKey(freshKey || undefined);
         log.appendLine(
           `[config] apiKey updated (length: ${freshKey.length})`,
         );
       }
-      if (e.affectsConfiguration("aidlc.backend") ||
-          e.affectsConfiguration("aidlc.piProvider") ||
-          e.affectsConfiguration("aidlc.piModel") ||
-          e.affectsConfiguration("aidlc.piApiKey")) {
-        const freshConfig = vscode.workspace.getConfiguration("aidlc");
+      if (e.affectsConfiguration("prism.backend") ||
+          e.affectsConfiguration("prism.piProvider") ||
+          e.affectsConfiguration("prism.piModel") ||
+          e.affectsConfiguration("prism.piApiKey")) {
+        const freshConfig = vscode.workspace.getConfiguration("PRISM");
         const backend = freshConfig.get<"cursor" | "pi" | "anthropic">("backend", "cursor");
         const piProvider = freshConfig.get<string>("piProvider", "anthropic");
         const piModel = freshConfig.get<string>("piModel", "claude-sonnet-4-20250514");
@@ -632,17 +632,17 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.StatusBarAlignment.Left,
     100,
   );
-  status.text = "$(symbol-ruler) AIDLC";
-  status.command = "aidlc.openPanel";
-  status.tooltip = "Open AIDLC pipeline";
+  status.text = "$(symbol-ruler) PRISM";
+  status.command = "prism.openPanel";
+  status.tooltip = "Open PRISM pipeline";
   status.show();
   context.subscriptions.push(status);
 
   context.subscriptions.push(
-    vscode.commands.registerCommand("aidlc.openPanel", () => showPanel()),
-    vscode.commands.registerCommand("aidlc.startRun", () => showPanel()),
-    vscode.commands.registerCommand("aidlc.newPipeline", () => showPanel()),
-    vscode.commands.registerCommand("aidlc.openArtifact", async () => {
+    vscode.commands.registerCommand("prism.openPanel", () => showPanel()),
+    vscode.commands.registerCommand("prism.startRun", () => showPanel()),
+    vscode.commands.registerCommand("prism.newPipeline", () => showPanel()),
+    vscode.commands.registerCommand("prism.openArtifact", async () => {
       const file = await vscode.window.showInputBox({
         prompt: "Artifact path (relative to workspace)",
       });
@@ -657,17 +657,17 @@ export function activate(context: vscode.ExtensionContext): void {
         );
       }
     }),
-    vscode.commands.registerCommand("aidlc.showDecisionLog", () => showPanel()),
-    vscode.commands.registerCommand("aidlc.openSettings", () =>
+    vscode.commands.registerCommand("prism.showDecisionLog", () => showPanel()),
+    vscode.commands.registerCommand("prism.openSettings", () =>
       showSettings(context),
     ),
-    vscode.commands.registerCommand("aidlc.approveStep", () => {
+    vscode.commands.registerCommand("prism.approveStep", () => {
       panel?.handleApproveStep();
     }),
-    vscode.commands.registerCommand("aidlc.rejectStep", () => {
+    vscode.commands.registerCommand("prism.rejectStep", () => {
       panel?.handleRejectStep();
     }),
-    vscode.commands.registerCommand("aidlc.resumeRun", async () => {
+    vscode.commands.registerCommand("prism.resumeRun", async () => {
       try {
         await bridge.resumeRun();
       } catch (err: any) {
@@ -676,7 +676,7 @@ export function activate(context: vscode.ExtensionContext): void {
         );
       }
     }),
-    vscode.commands.registerCommand("aidlc.dryRun", () => {
+    vscode.commands.registerCommand("prism.dryRun", () => {
       const detail = bridge.getPipelinesDetail();
       if (detail.length === 0) {
         vscode.window.showInformationMessage("No pipelines to dry-run.");
@@ -685,16 +685,16 @@ export function activate(context: vscode.ExtensionContext): void {
       bridge.runDryRun(detail[0].name);
       showPanel();
     }),
-    vscode.commands.registerCommand("aidlc.verifyCursorSdk", async () => {
+    vscode.commands.registerCommand("prism.verifyCursorSdk", async () => {
       log.show?.(true);
       const result = await runVerifyCursorSdk(wsRoot, log);
       if (result.status === "ok") {
         vscode.window.showInformationMessage(
-          "AIDLC: Cursor SDK verified ✓ (composer-2 reachable). See AIDLC output for details.",
+          "PRISM: Cursor SDK verified ✓ (composer-2 reachable). See PRISM output for details.",
         );
       } else {
         vscode.window.showErrorMessage(
-          `AIDLC: SDK verify failed — ${result.message ?? "unknown error"}`,
+          `PRISM: SDK verify failed — ${result.message ?? "unknown error"}`,
         );
       }
     }),
@@ -710,18 +710,18 @@ interface VerifyCursorSdkResult {
 }
 
 /**
- * Shared implementation of `AIDLC: Verify Cursor SDK` so it can be invoked
+ * Shared implementation of `PRISM: Verify Cursor SDK` so it can be invoked
  * both from the command palette and from the in-panel Settings page.
- * Always logs to the AIDLC output channel; returns a structured result.
+ * Always logs to the PRISM output channel; returns a structured result.
  */
 async function runVerifyCursorSdk(
   wsRoot: string,
   log: vscode.OutputChannel,
 ): Promise<VerifyCursorSdkResult> {
-  const cfg = vscode.workspace.getConfiguration("aidlc");
+  const cfg = vscode.workspace.getConfiguration("PRISM");
   const key = cfg.get<string>("apiKey", "");
   log.appendLine("");
-  log.appendLine("=== AIDLC: Verify Cursor SDK ===");
+  log.appendLine("=== PRISM: Verify Cursor SDK ===");
   log.appendLine(`[verify] cwd: ${wsRoot}`);
   log.appendLine(
     `[verify] apiKey: ${key ? `set (length ${key.length})` : "NOT SET — open Settings and paste your Cursor API key"}`,
@@ -730,7 +730,7 @@ async function runVerifyCursorSdk(
     return {
       status: "error",
       message:
-        "aidlc.apiKey is not set. Open the Settings tab and paste your Cursor API key.",
+        "prism.apiKey is not set. Open the Settings tab and paste your Cursor API key.",
     };
   }
   let modelsCount: number | undefined;
@@ -831,8 +831,8 @@ async function runVerifyCursorSdk(
   }
 }
 
-/** All AIDLC settings the panel cares about, read from VS Code workspace config. */
-function readAidlcSettings(): {
+/** All PRISM settings the panel cares about, read from VS Code workspace config. */
+function readPRISMSettings(): {
   apiKey: string;
   backend: "cursor" | "pi" | "anthropic";
   piProvider: string;
@@ -846,7 +846,7 @@ function readAidlcSettings(): {
   gateTimeout: number;
   commandConfirmation: boolean;
 } {
-  const cfg = vscode.workspace.getConfiguration("aidlc");
+  const cfg = vscode.workspace.getConfiguration("PRISM");
   return {
     apiKey: cfg.get<string>("apiKey", "") ?? "",
     backend: cfg.get<"cursor" | "pi" | "anthropic">("backend", "cursor") ?? "cursor",
@@ -869,10 +869,10 @@ function readAidlcSettings(): {
  * Persist a partial settings update. Workspace target when a workspace is open;
  * otherwise falls back to Global so the panel works in single-file scenarios too.
  */
-async function writeAidlcSettings(
+async function writePRISMSettings(
   next: Record<string, unknown>,
 ): Promise<void> {
-  const cfg = vscode.workspace.getConfiguration("aidlc");
+  const cfg = vscode.workspace.getConfiguration("PRISM");
   const target = vscode.workspace.workspaceFolders?.length
     ? vscode.ConfigurationTarget.Workspace
     : vscode.ConfigurationTarget.Global;
@@ -912,13 +912,13 @@ function showSettings(context: vscode.ExtensionContext): void {
   }
 
   settingsPanel = vscode.window.createWebviewPanel(
-    "aidlc.settings",
-    "AIDLC Settings",
+    "prism.settings",
+    "PRISM Settings",
     vscode.ViewColumn.One,
     { enableScripts: true, retainContextWhenHidden: true },
   );
 
-  const config = vscode.workspace.getConfiguration("aidlc");
+  const config = vscode.workspace.getConfiguration("PRISM");
   const apiKey = config.get("apiKey", "") as string;
   const model = config.get("model", "claude-sonnet-4-20250514") as string;
   const modelOverride = config.get("modelOverride", "") as string;
@@ -1016,7 +1016,7 @@ function getSettingsHtml(
   </style>
 </head>
 <body>
-  <h2>AIDLC Settings</h2>
+  <h2>PRISM Settings</h2>
   <div class="field">
     <label>Cursor API Key</label>
     <input type="password" id="apiKey" value="${escapeHtml(apiKey)}" placeholder="Enter your Cursor API key" />

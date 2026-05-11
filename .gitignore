@@ -3,4 +3,4 @@ dist/
 *.vsix
 .DS_Store
 *.log
-.aidlc/
+.prism/

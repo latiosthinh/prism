@@ -224,7 +224,7 @@ export class LoopOrchestrator {
         if (!prevState) continue;
         const artifactPath = path.join(
           cwd,
-          ".aidlc",
+          ".PRISM",
           "runs",
           run.runId,
           "steps",
@@ -290,7 +290,7 @@ export class LoopOrchestrator {
 
       const artifactDir = path.join(
         cwd,
-        ".aidlc",
+        ".PRISM",
         "runs",
         run.runId,
         "steps",
@@ -307,7 +307,7 @@ export class LoopOrchestrator {
           "utf8",
         );
         stepState.outputArtifact = path
-          .join(".aidlc", "runs", run.runId, "steps", stepDef.id, "latest.md")
+          .join(".PRISM", "runs", run.runId, "steps", stepDef.id, "latest.md")
           .replace(/\\/g, "/");
         stepState.artifactPath = stepState.outputArtifact;
       } catch (err: any) {

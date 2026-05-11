@@ -94,7 +94,7 @@ export class CursorSdkStepRunner implements StepRunner {
 
     if (!this.apiKey) {
       const msg =
-        "Cursor SDK requires aidlc.apiKey to be set. Open Settings and add your Cursor API key, then reload the window.";
+        "Cursor SDK requires prism.apiKey to be set. Open Settings and add your Cursor API key, then reload the window.";
       emit("error", msg);
       throw new Error(msg);
     }
@@ -134,7 +134,7 @@ export class CursorSdkStepRunner implements StepRunner {
         );
       if (isAuth) {
         const friendly =
-          "Cursor SDK authentication failed. Run inside Cursor IDE or set aidlc.apiKey for Anthropic fallback.";
+          "Cursor SDK authentication failed. Run inside Cursor IDE or set prism.apiKey for Anthropic fallback.";
         emit("error", friendly);
         throw new Error(friendly);
       }

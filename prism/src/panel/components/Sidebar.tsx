@@ -50,7 +50,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
           </div>
           <div className="min-w-0">
             <h1 className="font-headline-sm text-headline-sm font-semibold text-on-surface truncate">
-              AIDLC
+              PRISM
             </h1>
             <p className="text-[10px] text-on-surface-variant leading-none">
               Pipeline Engine

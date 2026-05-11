@@ -1,7 +1,7 @@
-# AIDLC + OpenCode Integration Project
+# PRISM Project
 
 ## Overview
-Integrate pi SDK (pi-ai + pi-agent-core) into AIDLC pipeline engine, creating a multi-backend AI coding system with a standalone @opencode-go/sdk package.
+Multi-provider AI development orchestration engine. Refracts ideas into working software through structured, gated pipelines with 30+ AI providers.
 
 ## Tech Stack
 - TypeScript (strict)
@@ -13,13 +13,14 @@ Integrate pi SDK (pi-ai + pi-agent-core) into AIDLC pipeline engine, creating a 
 - @anthropic-ai/sdk (fallback backend)
 
 ## Architecture
-- Monorepo with packages/opencode-sdk and aidlc/
-- AIDLC engine supports multiple step runners (Cursor, Pi, Anthropic)
+- Monorepo with packages/prism-sdk and prism/
+- PRISM engine supports multiple step runners (Cursor, PRISM SDK, Anthropic)
 - Users can select backend per-step or globally
-- @opencode-go/sdk wraps pi packages with OpenCode-style API
+- @prism/sdk wraps pi packages with PRISM-style API
 
 ## Key Decisions
 - Keep Cursor SDK as existing backend (no replacement)
-- Add Pi SDK as parallel backend option
+- Add PRISM SDK as parallel backend option
 - Build standalone SDK package for reusability
 - Use pi-agent-core SDK approach (not RPC mode)
+- Named "PRISM" — refracting ideas through multiple AI providers

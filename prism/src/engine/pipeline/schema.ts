@@ -2,7 +2,7 @@ import { z } from "zod";
 
 // ───────────────────────── Constants ─────────────────────────
 
-export const PIPELINE_DIR = ".aidlc";
+export const PIPELINE_DIR = ".PRISM";
 export const PIPELINE_CONFIG_DIR = `${PIPELINE_DIR}/pipelines`;
 export const AGENTS_DIR = `${PIPELINE_DIR}/agents`;
 export const SKILLS_DIR = `${PIPELINE_DIR}/skills`;

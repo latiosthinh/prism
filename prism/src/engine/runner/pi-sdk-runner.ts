@@ -7,7 +7,7 @@ import {
   AgentEvent,
   AgentEventType,
 } from "../pipeline/schema.js";
-import { OpenCodeAgent } from "@opencode-go/sdk";
+import { OpenCodeAgent } from "@prism/sdk";
 import type { AgentTool } from "@earendil-works/pi-agent-core";
 import { Type } from "@earendil-works/pi-ai";
 
@@ -73,7 +73,7 @@ export class PiSdkStepRunner implements StepRunner {
     );
 
     if (!this.config.apiKey) {
-      const msg = "Pi SDK requires aidlc.piApiKey to be set. Open Settings and add your API key.";
+      const msg = "Pi SDK requires prism.piApiKey to be set. Open Settings and add your API key.";
       emit("error", msg);
       throw new Error(msg);
     }

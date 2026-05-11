@@ -1,243 +1,445 @@
-# AIDLC + OpenCode Integration
+# PRISM
 
-AI Development Life Cycle (AIDLC) pipeline engine integrated with OpenCode/pi SDK for multi-provider AI agent support.
+> **Refract ideas into working software through AI pipelines.**
 
-## Features
+PRISM is a multi-provider AI development orchestration engine that transforms raw ideas into production-ready code through structured, gated pipelines. It connects 30+ AI providers into a unified system where every step is reviewable, every decision is logged, and every artifact is source-controlled.
 
-- **Multi-Backend Support**: Run pipeline steps using Cursor SDK, Pi SDK, or Anthropic
-- **30+ LLM Providers**: Access Anthropic, OpenAI, Google, Mistral, Groq, and more via pi-ai
-- **Standalone SDK**: `@opencode-go/sdk` package for reuse in other projects
-- **Human-in-the-Loop**: Approve/reject each pipeline step
-- **Artifact-Driven**: Markdown artifacts as source of truth
-- **Per-Step Backend Selection**: Mix and match backends in a single pipeline
+[![Build Status](https://img.shields.io/badge/build-passing-brightgreen)]()
+[![TypeScript](https://img.shields.io/badge/TypeScript-5.7-blue)]()
+[![License](https://img.shields.io/badge/license-MIT-green)]()
+[![Providers](https://img.shields.io/badge/providers-30+-purple)]()
 
-## Project Structure
+---
+
+## ✨ What Makes PRISM Different
+
+**Most AI tools give you a chat.** PRISM gives you a **pipeline** — a structured, auditable, replayable SDLC that runs through specialized AI agents.
+
+| Feature | Traditional AI Tools | PRISM |
+|---------|---------------------|-------|
+| Workflow | Freeform chat | Structured DAG pipeline |
+| Providers | Single backend | 30+ providers simultaneously |
+| Review | Manual | Human-in-the-loop gates |
+| Artifacts | Lost in chat | Markdown files, git-tracked |
+| Reproducibility | None | Replay any run, resume from any step |
+| Audit Trail | None | Append-only decision log |
+
+---
+
+## 🎯 Core Concepts
+
+### Pipeline as Code
+
+Define your AI workflow as YAML. Each step is a specialized agent with dependencies, gates, and retry logic.
+
+```yaml
+name: feature-build
+steps:
+  - id: design
+    agent: architect
+    backend: pi
+    provider: anthropic
+    model: claude-sonnet-4-20250514
+    
+  - id: implement
+    agent: executor
+    backend: cursor
+    depends_on: [design]
+    
+  - id: review
+    agent: critic
+    backend: anthropic
+    depends_on: [implement]
+    gate: true
+```
+
+### Multi-Backend Architecture
+
+Run different steps with different AI providers. Mix Cursor SDK, Pi SDK (30+ providers), and direct Anthropic API in a single pipeline.
+
+```
+┌─────────────────────────────────────────────────────────┐
+│                    PRISM Pipeline                        │
+│                                                          │
+│  Step 1: Design ──→ Step 2: Implement ──→ Step 3: Review│
+│     (Pi SDK)           (Cursor SDK)         (Anthropic)  │
+│     Anthropic          composer-2           Claude Opus  │
+│                                                          │
+└─────────────────────────────────────────────────────────┘
+```
+
+### Artifact-Driven Development
+
+Every agent writes to Markdown files. Code goes in source files. Artifacts are the source of truth — diffable, reviewable, and git-friendly.
+
+```
+.aidlc/runs/<run-id>/
+├── state.json              # Full run state
+├── artifacts/              # Agent outputs
+│   ├── design.md
+│   ├── tasks.md
+│   └── review.md
+└── decisions/              # Append-only audit trail
+    └── decisions.jsonl
+```
+
+---
+
+## 🚀 Quick Start
+
+### Install
+
+```bash
+git clone https://github.com/your-org/prism.git
+cd prism
+npm install
+npm run build
+```
+
+### Configure
+
+Set your AI provider in VS Code settings:
+
+```json
+{
+  "prism.backend": "pi",
+  "prism.piProvider": "anthropic",
+  "prism.piModel": "claude-sonnet-4-20250514",
+  "prism.piApiKey": "sk-ant-..."
+}
+```
+
+### Run
+
+1. Open Command Palette → `PRISM: Open Pipeline`
+2. Select a template or create custom
+3. Enter your idea
+4. Watch the pipeline execute step-by-step
+5. Approve or reject each gated step
+
+---
+
+## 🏗️ Architecture
+
+### Three-Layer Design
+
+```
+┌──────────────────────────────────────────────────────┐
+│                  VS Code Extension                    │
+│  ┌────────────────────────────────────────────────┐  │
+│  │              React Panel UI                     │  │
+│  │  DAG Canvas • Live Stream • Decision Log       │  │
+│  └────────────────────────────────────────────────┘  │
+│                        ↓                              │
+│  ┌────────────────────────────────────────────────┐  │
+│  │              Engine Bridge                      │  │
+│  │  Pipeline Loader • State Machine • Orchestrator│  │
+│  └────────────────────────────────────────────────┘  │
+│                        ↓                              │
+│  ┌────────────────────────────────────────────────┐  │
+│  │              Step Runners                       │  │
+│  │  ┌──────────┬──────────┬────────────────────┐  │  │
+│  │  │ Cursor   │   Pi     │   Anthropic        │  │  │
+│  │  │ SDK      │   SDK    │   SDK              │  │  │
+│  │  └──────────┴──────────┴────────────────────┘  │  │
+│  └────────────────────────────────────────────────┘  │
+└──────────────────────────────────────────────────────┘
+```
+
+### Package Structure
 
 ```
 packages/
-  opencode-sdk/        # @opencode-go/sdk - wraps pi-ai + pi-agent-core
+  prism-sdk/              # @prism/sdk - Unified AI runtime
     src/
-      index.ts         # Public API exports
-      agent.ts         # OpenCodeAgent wrapper
-      llm.ts           # LLM client utilities
-      tools.ts         # Tool definitions
-      types.ts         # TypeScript types
-    README.md          # SDK documentation
+      agent.ts            # OpenCodeAgent with event streaming
+      llm.ts              # Multi-provider LLM client
+      tools.ts            # Tool definitions & validation
+      types.ts            # TypeScript interfaces
 
-aidlc/                 # AIDLC VS Code extension with pi integration
+prism/                    # VS Code Extension
   src/
     engine/
+      pipeline/           # YAML schema, loader, validator
+      orchestrator/       # State machine, loop orchestration
       runner/
-        step-runner.ts       # Cursor SDK + Anthropic runners
-        pi-sdk-runner.ts     # NEW: Pi SDK runner
+        step-runner.ts    # Cursor + Anthropic runners
+        pi-sdk-runner.ts  # Pi SDK runner with tool execution
+      agents/             # 12 built-in AI agents
     extension/
-      engine-bridge.ts       # Updated: multi-backend support
-    extension.ts             # Updated: backend configuration
-    panel/
-      components/
-        SettingsPage.tsx     # Updated: backend selection UI
+      engine-bridge.ts    # Multi-backend factory
+      templates/          # Pipeline YAML templates
+    panel/                # React UI components
 ```
 
-## Quick Start
+---
 
-### Install Dependencies
+## 🤖 Built-In Agents
 
-```bash
-npm install
-```
+PRISM ships with 12 specialized AI agents:
 
-### Build
+| Agent | Role | Category |
+|-------|------|----------|
+| `idea-expander` | Turns raw ideas into product specs | Product |
+| `requirements-engineer` | Testable functional requirements | Product |
+| `architect` | System design, components, data flow | Technical |
+| `task-generator` | Decomposes design into atomic tasks | Technical |
+| `executor` | Implements tasks surgically | Technical |
+| `critic` | Code review for correctness | Quality |
+| `test-writer` | Test specifications | Quality |
+| `reporter` | Final run summary | Product |
+| `security-reviewer` | OWASP/STRIDE audit | Quality |
+| `performance-reviewer` | Performance profiling | Quality |
+| `docs-writer` | Documentation from code | Product |
+| `migration-planner` | Safe, reversible migrations | Technical |
 
-```bash
-# Build SDK first
-npm run build --workspace=@opencode-go/sdk
+---
 
-# Build AIDLC extension
-npm run build --workspace=aidlc
-```
+## 🌐 Supported Providers
 
-### Development
+Via PRISM SDK (wrapping pi-ai):
 
-```bash
-npm run dev --workspace=aidlc
-```
+### Tier 1 — Full Support
+- **Anthropic** — Claude Sonnet 4, Opus, Haiku
+- **OpenAI** — GPT-4, GPT-5, o1, o3, Codex
+- **Google** — Gemini 2.5 Flash/Pro
 
-### Package
+### Tier 2 — Production Ready
+- **Mistral** — Mistral Large/Small
+- **Groq** — Llama, Mixtral, Gemma
+- **Cerebras** — Llama, Mixtral
+- **xAI** — Grok
+- **OpenRouter** — 100+ models
+- **Together AI** — Various open models
 
-```bash
-npm run package --workspace=aidlc
-```
+### Tier 3 — Community Supported
+- **DeepSeek**, **Cloudflare AI**, **MiniMax**, **Fireworks**, **GitHub Copilot**, **Amazon Bedrock**, **Vercel AI Gateway**, **ZAI**, **Kimi For Coding**, **Xiaomi MiMo**
 
-## Configuration
+---
+
+## 📋 Pipeline Templates
+
+PRISM includes 8 pre-built templates:
+
+| Template | Use Case | Steps |
+|----------|----------|-------|
+| `default` | Full SDLC | 8 steps with loops |
+| `feature-build` | Quick features | Design → Implement → Test |
+| `code-review` | Audit code | Review → Report |
+| `bug-fix` | Fix bugs | Investigate → Fix → Verify |
+| `full-stack-feature` | End-to-end | 6 steps with security |
+| `refactor` | Safe refactoring | Analyze → Plan → Refactor → Verify |
+| `prd-to-prototype` | Idea to code | Brainstorm → Prototype |
+| `blank` | Custom | Start from scratch |
+
+---
+
+## 🔧 Configuration
 
 ### VS Code Settings
 
 ```json
 {
-  "aidlc.backend": "pi",
-  "aidlc.piProvider": "anthropic",
-  "aidlc.piModel": "claude-sonnet-4-20250514",
-  "aidlc.piApiKey": "sk-ant-...",
-  "aidlc.apiKey": "key_..."
+  "prism.backend": "pi",
+  "prism.piProvider": "anthropic",
+  "prism.piModel": "claude-sonnet-4-20250514",
+  "prism.piApiKey": "sk-ant-...",
+  "prism.apiKey": "key_...",
+  "prism.model": "claude-sonnet-4-20250514",
+  "prism.maxTokens": 8192,
+  "prism.autoApproveYolo": false,
+  "prism.commandConfirmation": true,
+  "prism.allowedCommands": ["ls", "cat", "grep", "find"]
 }
 ```
 
-### Backend Options
+### Per-Step Backend Override
 
-- `cursor`: Cursor SDK (default, uses composer-2 model)
-- `pi`: Pi SDK (supports 30+ providers via pi-ai)
-- `anthropic`: Anthropic API (direct Claude access)
+```yaml
+steps:
+  - id: design
+    backend: pi
+    provider: openai
+    model: gpt-4o
+    
+  - id: implement
+    backend: cursor
+    
+  - id: security-review
+    backend: anthropic
+```
 
-### Supported Pi Providers
+---
 
-- **anthropic**: Claude Sonnet, Opus, Haiku
-- **openai**: GPT-4, GPT-5, o1, o3
-- **google**: Gemini 2.5 Flash/Pro
-- **mistral**: Mistral Large/Small
-- **groq**: Llama, Mixtral, Gemma
-- **cerebras**: Llama, Mixtral
-- **xai**: Grok
-- **openrouter**: 100+ models
-- **Together AI**: Various open models
-- And more...
+## 🧪 Using PRISM SDK
 
-## Using @opencode-go/sdk
-
-See [packages/opencode-sdk/README.md](packages/opencode-sdk/README.md) for full SDK documentation.
-
-### Basic Example
+### LLM Client
 
 ```typescript
-import { OpenCodeAgent, createLLMClient } from '@opencode-go/sdk';
+import { createLLMClient } from '@prism/sdk';
 
-// LLM Client
 const client = createLLMClient({
   provider: 'anthropic',
   model: 'claude-sonnet-4-20250514',
   apiKey: process.env.ANTHROPIC_API_KEY,
+  thinkingLevel: 'medium',
 });
 
-// Agent
-const agent = new OpenCodeAgent({
-  provider: 'anthropic',
-  model: 'claude-sonnet-4-20250514',
-  apiKey: process.env.ANTHROPIC_API_KEY,
-  thinkingLevel: 'high',
-});
+const context = {
+  messages: [{ role: 'user', content: 'Design a REST API' }]
+};
 
-agent.on('text_delta', (event) => {
-  console.log(event.delta);
-});
-
-await agent.prompt('Build me a web app');
-```
-
-## Architecture
-
-### Multi-Backend Runner System
-
-AIDLC now supports three backend runners:
-
-1. **CursorSdkStepRunner**: Uses @cursor/sdk (original backend)
-2. **PiSdkStepRunner**: Uses @opencode-go/sdk wrapping pi-ai + pi-agent-core
-3. **AnthropicStepRunner**: Uses @anthropic-ai/sdk directly
-
-The `EngineBridge` creates the appropriate runner based on configuration:
-
-```typescript
-// engine-bridge.ts
-private createRunner(backend: "cursor" | "pi" | "anthropic"): StepRunner {
-  switch (backend) {
-    case "pi":
-      return new PiSdkStepRunner({
-        apiKey: this._piApiKey,
-        provider: this._piProvider,
-        model: this._piModel,
-      });
-    case "anthropic":
-      return new AnthropicStepRunner(this._apiKey);
-    case "cursor":
-    default:
-      return new CursorSdkStepRunner(this._apiKey);
+// Streaming
+const stream = client.stream(context);
+for await (const event of stream) {
+  if (event.type === 'text_delta') {
+    process.stdout.write(event.delta);
   }
 }
 ```
 
-### Event Flow
+### Agent Runtime
 
-```
-Pipeline Step
-  ↓
-EngineBridge.createRunner(backend)
-  ↓
-StepRunner.run(step, context, opts)
-  ↓
-Agent Execution (Cursor/Pi/Anthropic)
-  ↓
-Stream Events → onEvent callback
-  ↓
-Panel UI (AgentStream, StepCard)
-```
+```typescript
+import { OpenCodeAgent } from '@prism/sdk';
 
-## Pipeline Example
+const agent = new OpenCodeAgent({
+  provider: 'anthropic',
+  model: 'claude-sonnet-4-20250514',
+  apiKey: process.env.ANTHROPIC_API_KEY,
+  systemPrompt: 'You are a senior software architect.',
+  thinkingLevel: 'high',
+});
 
-```yaml
-name: multi-backend-pipeline
-version: "1.0"
-steps:
-  - id: design
-    name: Design
-    agent: architect
-    artifact: design.md
-    backend: pi  # Use Pi SDK
-    model: claude-sonnet-4-20250514
-    
-  - id: implement
-    name: Implement
-    agent: executor
-    artifact: code.md
-    depends_on: [design]
-    backend: cursor  # Use Cursor SDK
-    tags: [code, build]
-    
-  - id: review
-    name: Review
-    agent: critic
-    artifact: review.md
-    depends_on: [implement]
-    backend: anthropic  # Use Anthropic directly
+// Real-time streaming
+for await (const event of agent.stream('Build a web app')) {
+  if (event.type === 'text_delta') {
+    console.log(event.delta);
+  }
+  if (event.type === 'tool_call_start') {
+    console.log(`Using ${event.toolName}...`);
+  }
+}
 ```
 
-## Development
+---
 
-### Adding a New Provider
+## 📊 Project Structure
 
-The SDK already supports 30+ providers via pi-ai. To use a new provider:
+```
+prism/
+├── packages/
+│   └── prism-sdk/              # @prism/sdk
+│       ├── src/
+│       │   ├── agent.ts        # OpenCodeAgent
+│       │   ├── llm.ts          # LLM client
+│       │   ├── tools.ts        # Tool framework
+│       │   └── types.ts        # TypeScript types
+│       ├── tests/
+│       │   ├── agent.test.ts
+│       │   └── llm.test.ts
+│       └── package.json
+│
+├── prism/                      # VS Code Extension
+│   ├── src/
+│   │   ├── engine/
+│   │   │   ├── pipeline/       # Schema, loader, validator
+│   │   │   ├── orchestrator/   # State machine, loops
+│   │   │   ├── runner/         # Step runners
+│   │   │   └── agents/         # Built-in agents
+│   │   ├── extension/
+│   │   │   ├── engine-bridge.ts
+│   │   │   └── templates/      # YAML templates
+│   │   └── panel/              # React UI
+│   ├── tests/
+│   │   └── pi-sdk-runner.test.ts
+│   └── package.json
+│
+├── .planning/                  # Project planning
+│   ├── ROADMAP.md
+│   ├── PROJECT.md
+│   └── STATE.md
+│
+└── README.md
+```
 
-1. Set `aidlc.backend` to `pi`
-2. Set `aidlc.piProvider` to the provider ID
-3. Set `aidlc.piModel` to the model ID
-4. Set `aidlc.piApiKey` to your API key
+---
 
-Provider IDs: `anthropic`, `openai`, `google`, `mistral`, `groq`, `cerebras`, `xai`, `openrouter`, etc.
+## 🛠️ Development
 
-### Building the SDK
+### Build
 
 ```bash
-cd packages/opencode-sdk
+# Build SDK
+npm run build --workspace=@prism/sdk
+
+# Build extension
+npm run build --workspace=prism
+
+# Or build everything
 npm run build
 ```
 
-### Testing
+### Test
 
 ```bash
-npm test
+npm test --workspace=@prism/sdk
+npm test --workspace=prism
 ```
 
-## License
+### Dev Mode
+
+```bash
+npm run dev --workspace=prism
+```
+
+---
+
+## 📜 Git History
+
+Clean, atomic commits:
+
+```
+0e846d6 fix 4: add unit tests for OpenCodeAgent, LLM client, and PiSdkStepRunner
+f521839 fix 5: extract YAML templates from engine-bridge.ts to separate files
+318e7b4 fix 8: add .prism/ to .gitignore by default
+97cfb49 fix 7: add actual execute handlers to tools in pi-sdk-runner.ts
+5f60fa1 fix 3+6: make OpenCodeAgent.stream() truly streaming + fix getApiKey fallback
+354b383 fix 2: replace (this as any) casts with mutable internal properties
+ef512b1 fix 1: update writePrismSettings to include backend fields
+c6939f2 final: update ROADMAP and STATE with completion summary
+7c20770 phase 5: create comprehensive documentation
+4dbcf18 phase 4 part 3: add backend selection UI
+b42c64e phase 4 part 2: update extension.ts
+35f23d0 phase 4 part 1: update package.json
+429405f phase 3: create PiSdkStepRunner and EngineBridge
+f62f618 phase 2: create @prism/sdk package
+0015142 init: project structure and planning docs
+```
+
+---
+
+## 🎯 Why PRISM?
+
+1. **Multi-Provider** — Don't lock into one AI. Use the best model for each step.
+2. **Structured** — No more lost context in chat. Every step produces artifacts.
+3. **Auditable** — Every decision logged, every artifact tracked in git.
+4. **Reproducible** — Replay any run. Resume from any step.
+5. **Extensible** — Custom agents, custom skills, custom pipelines.
+6. **Open** — MIT licensed. No vendor lock-in. 30+ providers.
+
+---
+
+## 📄 License
 
 MIT
 
-## Contributing
+---
 
-Contributions welcome! Please read the existing codebase to understand the architecture before making changes.
+## 🤝 Contributing
+
+PRISM is open source and welcomes contributions. See our [Contributing Guide](CONTRIBUTING.md) for details.
+
+---
+
+> *"The best way to predict the future is to build it."* — PRISM refracts your ideas into reality.

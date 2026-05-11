@@ -1,11 +1,11 @@
-# @opencode-go/sdk
+# PRISM SDK
 
 Unified LLM and Agent runtime SDK wrapping pi-ai and pi-agent-core. Provides a simplified API for working with 30+ AI providers.
 
 ## Installation
 
 ```bash
-npm install @opencode-go/sdk
+npm install @prism/sdk
 ```
 
 ## Quick Start
@@ -13,7 +13,7 @@ npm install @opencode-go/sdk
 ### LLM Client
 
 ```typescript
-import { createLLMClient } from '@opencode-go/sdk';
+import { createLLMClient } from '@prism/sdk';
 
 const client = createLLMClient({
   provider: 'anthropic',
@@ -42,7 +42,7 @@ console.log(response.content);
 ### Agent Runtime
 
 ```typescript
-import { OpenCodeAgent } from '@opencode-go/sdk';
+import { OpenCodeAgent } from '@prism/sdk';
 
 const agent = new OpenCodeAgent({
   provider: 'anthropic',

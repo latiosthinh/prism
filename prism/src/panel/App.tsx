@@ -8,7 +8,7 @@ import { Pipeline } from "./components/Pipeline.js";
 import { RunsList } from "./components/RunsList.js";
 import { SkillModal, type SkillEntry } from "./components/SkillModal.js";
 import { PipelineDetailEditor } from "./components/PipelineDetailEditor.js";
-import { SettingsPage, type AidlcSettings } from "./components/SettingsPage.js";
+import { SettingsPage, type PRISMSettings } from "./components/SettingsPage.js";
 import {
   StartRunModal,
   type StartRunPayload,
@@ -255,7 +255,7 @@ const App: React.FC = () => {
               settings={settings}
               verifyResult={verifyResult}
               verifyInFlight={verifyInFlight}
-              onSave={(next: Partial<AidlcSettings>) =>
+              onSave={(next: Partial<PRISMSettings>) =>
                 send({ type: "saveSettings", settings: next })
               }
               onVerify={() => send({ type: "verifyCursorSdk" })}

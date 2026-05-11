@@ -159,7 +159,7 @@ export class EngineBridge {
     switch (backend) {
       case "pi":
         if (!this._piApiKey) {
-          throw new Error("Pi SDK requires aidlc.piApiKey to be set");
+          throw new Error("Pi SDK requires prism.piApiKey to be set");
         }
         return new PiSdkStepRunner({
           apiKey: this._piApiKey,

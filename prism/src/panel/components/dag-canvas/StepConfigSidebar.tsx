@@ -166,13 +166,13 @@ export const StepConfigSidebar: React.FC<SidebarProps> = ({
         <div>
           <Label>Model</Label>
           <input
-            list="aidlc-model-options"
+            list="PRISM-model-options"
             type="text"
             value={step.model}
             onChange={(e) => update("model", e.target.value)}
             className="w-full px-2 py-1.5 bg-zinc-950 border border-zinc-800 rounded text-zinc-50 text-sm"
           />
-          <datalist id="aidlc-model-options">
+          <datalist id="PRISM-model-options">
             {MODELS.map((m) => (
               <option key={m} value={m} />
             ))}

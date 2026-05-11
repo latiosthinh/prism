@@ -1,12 +1,13 @@
 {
-  "name": "aidlc-opencode",
+  "name": "prism",
   "private": true,
   "workspaces": [
     "packages/*",
-    "aidlc"
+    "prism"
   ],
   "scripts": {
-    "build": "npm run build --workspace=@opencode-go/sdk && npm run build --workspace=aidlc",
-    "dev": "npm run dev --workspace=aidlc"
+    "build": "npm run build --workspace=@prism/sdk && npm run build --workspace=prism",
+    "dev": "npm run dev --workspace=prism",
+    "test": "npm run test --workspaces"
   }
 }

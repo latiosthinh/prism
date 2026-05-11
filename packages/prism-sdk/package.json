@@ -1,7 +1,7 @@
 {
-  "name": "@opencode-go/sdk",
+  "name": "@prism/sdk",
   "version": "0.1.0",
-  "description": "OpenCode SDK - Unified LLM and Agent runtime wrapping pi-ai and pi-agent-core",
+  "description": "PRISM SDK - Unified LLM and Agent runtime wrapping pi-ai and pi-agent-core",
   "main": "./dist/index.js",
   "module": "./dist/index.mjs",
   "types": "./dist/index.d.ts",

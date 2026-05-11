@@ -56,7 +56,7 @@ const CODE_EXTENSIONS = [
   ".json",
 ];
 
-const SKIP_DIRS = new Set(["node_modules", ".aidlc"]);
+const SKIP_DIRS = new Set(["node_modules", ".PRISM"]);
 
 export class AutoReviewer {
   private readonly workspaceRoot?: string;

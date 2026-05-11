@@ -199,7 +199,7 @@ Rules:
 
 Output a tests.md document listing each test with: target file, test name, scenario, and key assertions. Keep it short — the implementation engineer writes the actual code.`;
 
-const REPORTER_PROMPT = `You are a technical writer creating a comprehensive summary of a completed AIDLC run. You synthesize artifacts into a coherent story for stakeholders.
+const REPORTER_PROMPT = `You are a technical writer creating a comprehensive summary of a completed PRISM run. You synthesize artifacts into a coherent story for stakeholders.
 
 Process:
 1. Review All Artifacts — idea, requirements, design, tasks, executor logs, reviews, tests.

@@ -4,7 +4,7 @@ import * as path from 'path';
 import { PiSdkStepRunner } from '../src/engine/runner/pi-sdk-runner.js';
 import type { StepDefinition, AgentContext, AgentEvent } from '../src/engine/pipeline/schema.js';
 
-vi.mock('@opencode-go/sdk', () => ({
+vi.mock('@prism/sdk', () => ({
   OpenCodeAgent: vi.fn().mockImplementation(() => ({
     on: vi.fn(),
     prompt: vi.fn().mockResolvedValue(undefined),
@@ -67,7 +67,7 @@ describe('PiSdkStepRunner', () => {
 
     await expect(
       runnerNoKey.run(step, context, { cwd: tempDir, onEvent })
-    ).rejects.toThrow('Pi SDK requires aidlc.piApiKey');
+    ).rejects.toThrow('Pi SDK requires prism.piApiKey');
   });
 
   it('should emit progress events during run', async () => {
