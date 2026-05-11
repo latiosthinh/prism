@@ -6,7 +6,21 @@
   "publisher": "prism",
   "license": "MIT",
   "engines": { "vscode": "^1.85.0" },
-  "categories": ["Other"],
+  "categories": ["AI", "Programming Languages", "Other"],
+  "keywords": ["ai", "agent", "pipeline", "multi-agent", "sdlc", "orchestration", "prism"],
+  "icon": "assets/icon.png",
+  "galleryBanner": {
+    "color": "#09090b",
+    "theme": "dark"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/latiosthinh/prism"
+  },
+  "bugs": {
+    "url": "https://github.com/latiosthinh/prism/issues"
+  },
+  "homepage": "https://github.com/latiosthinh/prism#readme",
   "activationEvents": [
     "onStartupFinished"
   ],
