@@ -1,5 +1,6 @@
 import * as fs from "fs";
 import * as path from "path";
+import { execSync } from "child_process";
 import {
   StepDefinition,
   AgentContext,
@@ -7,7 +8,7 @@ import {
   AgentEventType,
 } from "../pipeline/schema.js";
 import { OpenCodeAgent } from "@opencode-go/sdk";
-import type { Tool } from "@earendil-works/pi-ai";
+import type { AgentTool } from "@earendil-works/pi-agent-core";
 import { Type } from "@earendil-works/pi-ai";
 
 export interface PiSdkRunnerConfig {
@@ -261,38 +262,99 @@ export class PiSdkStepRunner implements StepRunner {
     return sections.join("\n\n");
   }
 
-  private createTools(cwd: string, emit: (type: AgentEventType, content: string, meta?: Record<string, unknown>) => void): Tool[] {
+  private createTools(cwd: string, emit: (type: AgentEventType, content: string, meta?: Record<string, unknown>) => void): AgentTool<any>[] {
     return [
       {
         name: "read_file",
+        label: "Read File",
         description: "Read the contents of a file",
         parameters: Type.Object({
           path: Type.String({ description: "File path relative to cwd" }),
         }),
+        execute: async (_toolCallId: string, params: { path: string }) => {
+          const absPath = path.isAbsolute(params.path) ? params.path : path.join(cwd, params.path);
+          emit("progress", `Reading file: ${absPath}`);
+          const content = fs.readFileSync(absPath, "utf8");
+          return {
+            content: [{ type: "text", text: content }],
+            details: { path: absPath, size: content.length },
+          };
+        },
       },
       {
         name: "write_file",
+        label: "Write File",
         description: "Write content to a file",
         parameters: Type.Object({
           path: Type.String({ description: "File path relative to cwd" }),
           content: Type.String({ description: "File content" }),
         }),
+        execute: async (_toolCallId: string, params: { path: string; content: string }) => {
+          const absPath = path.isAbsolute(params.path) ? params.path : path.join(cwd, params.path);
+          const dir = path.dirname(absPath);
+          if (!fs.existsSync(dir)) {
+            fs.mkdirSync(dir, { recursive: true });
+          }
+          emit("progress", `Writing file: ${absPath}`);
+          fs.writeFileSync(absPath, params.content, "utf8");
+          return {
+            content: [{ type: "text", text: `File written: ${absPath}` }],
+            details: { path: absPath, size: params.content.length },
+          };
+        },
       },
       {
         name: "edit_file",
+        label: "Edit File",
         description: "Edit a file by replacing text",
         parameters: Type.Object({
           path: Type.String({ description: "File path relative to cwd" }),
           oldText: Type.String({ description: "Text to replace" }),
           newText: Type.String({ description: "Replacement text" }),
         }),
+        execute: async (_toolCallId: string, params: { path: string; oldText: string; newText: string }) => {
+          const absPath = path.isAbsolute(params.path) ? params.path : path.join(cwd, params.path);
+          emit("progress", `Editing file: ${absPath}`);
+          const content = fs.readFileSync(absPath, "utf8");
+          if (!content.includes(params.oldText)) {
+            throw new Error(`Text not found in file: ${params.oldText.substring(0, 50)}...`);
+          }
+          const newContent = content.replace(params.oldText, params.newText);
+          fs.writeFileSync(absPath, newContent, "utf8");
+          return {
+            content: [{ type: "text", text: `File edited: ${absPath}` }],
+            details: { path: absPath, replacements: 1 },
+          };
+        },
       },
       {
         name: "bash",
+        label: "Bash",
         description: "Execute a bash command",
         parameters: Type.Object({
           command: Type.String({ description: "Command to execute" }),
         }),
+        execute: async (_toolCallId: string, params: { command: string }) => {
+          emit("progress", `Executing: ${params.command}`);
+          try {
+            const result = execSync(params.command, {
+              cwd,
+              encoding: "utf8",
+              timeout: 30000,
+              maxBuffer: 1024 * 1024,
+            });
+            return {
+              content: [{ type: "text", text: result }],
+              details: { command: params.command, exitCode: 0 },
+            };
+          } catch (error: any) {
+            return {
+              content: [{ type: "text", text: error.stdout || error.stderr || error.message }],
+              details: { command: params.command, exitCode: error.status || 1, error: true },
+              isError: true,
+            };
+          }
+        },
       },
     ];
   }
