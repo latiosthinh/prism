@@ -1,0 +1,13 @@
+name: pipeline
+version: "1.0"
+description: "Blank pipeline — customize steps, agents, and skills in the editor"
+execution:
+  mode: sequential
+steps:
+  - id: step-1
+    name: First Step
+    agent: idea-expander
+    model: composer-2
+    artifact: output.md
+    gate: true
+    tags: [product]

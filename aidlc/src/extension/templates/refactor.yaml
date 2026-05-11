@@ -1,0 +1,36 @@
+name: refactor
+version: "1.0"
+description: "Safe refactor: analyze → plan → refactor → verify with critic loop"
+execution:
+  mode: sequential
+steps:
+  - id: analyze
+    name: Analyze Code
+    agent: critic
+    artifact: analysis.md
+    gate: true
+    tags: [quality]
+  - id: plan
+    name: Refactor Plan
+    agent: architect
+    artifact: refactor-plan.md
+    depends_on: [analyze]
+    gate: true
+    tags: [technical]
+  - id: refactor
+    name: Apply Refactor
+    agent: executor
+    artifact: tasks.md
+    depends_on: [plan]
+    tags: [code, implement]
+    loop:
+      mode: task
+      agent: critic
+      maxIterations: 3
+  - id: verify
+    name: Verify Behavior
+    agent: test-writer
+    artifact: tests.md
+    depends_on: [refactor]
+    gate: true
+    tags: [quality]

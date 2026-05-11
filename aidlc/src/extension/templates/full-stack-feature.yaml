@@ -1,0 +1,48 @@
+name: full-stack-feature
+version: "1.0"
+description: "End-to-end feature: design → UI spec → implement → test → docs → security review"
+execution:
+  mode: sequential
+steps:
+  - id: design
+    name: Technical Design
+    agent: architect
+    artifact: design.md
+    gate: true
+    tags: [technical]
+  - id: ui-spec
+    name: UI Spec
+    agent: architect
+    artifact: ui-spec.md
+    depends_on: [design]
+    gate: true
+    tags: [technical, ui]
+  - id: implement
+    name: Implementation
+    agent: executor
+    artifact: tasks.md
+    depends_on: [ui-spec]
+    tags: [code, build, implement]
+    loop:
+      mode: task
+      agent: critic
+      maxIterations: 3
+  - id: test
+    name: Tests
+    agent: test-writer
+    artifact: tests.md
+    depends_on: [implement]
+    tags: [quality]
+  - id: security
+    name: Security Review
+    agent: security-reviewer
+    artifact: security-review.md
+    depends_on: [test]
+    gate: true
+    tags: [quality, security]
+  - id: docs
+    name: Documentation
+    agent: docs-writer
+    artifact: docs.md
+    depends_on: [security]
+    tags: [product]

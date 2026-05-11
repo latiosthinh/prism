@@ -1,0 +1,24 @@
+name: feature-build
+version: "1.0"
+description: "Quick feature build: design → implement → test"
+execution:
+  mode: sequential
+steps:
+  - id: design
+    name: Feature Design
+    agent: architect
+    artifact: design.md
+    gate: true
+    tags: [technical]
+  - id: implement
+    name: Implement Feature
+    agent: executor
+    artifact: tasks.md
+    depends_on: [design]
+    tags: [code, build, implement]
+  - id: test
+    name: Test Feature
+    agent: test-writer
+    artifact: tests.md
+    depends_on: [implement]
+    tags: [quality]

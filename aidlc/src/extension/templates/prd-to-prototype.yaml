@@ -1,0 +1,36 @@
+name: prd-to-prototype
+version: "1.0"
+description: "From idea to working prototype: brainstorm → requirements → design → prototype"
+execution:
+  mode: sequential
+steps:
+  - id: brainstorm
+    name: Brainstorm
+    agent: idea-expander
+    artifact: idea.md
+    gate: true
+    tags: [product]
+  - id: requirements
+    name: Requirements
+    agent: requirements-engineer
+    artifact: requirements.md
+    depends_on: [brainstorm]
+    gate: true
+    tags: [product]
+  - id: design
+    name: Design
+    agent: architect
+    artifact: design.md
+    depends_on: [requirements]
+    gate: true
+    tags: [technical]
+  - id: prototype
+    name: Build Prototype
+    agent: executor
+    artifact: tasks.md
+    depends_on: [design]
+    tags: [code, build, implement]
+    loop:
+      mode: task
+      agent: critic
+      maxIterations: 3

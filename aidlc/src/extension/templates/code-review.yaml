@@ -1,0 +1,18 @@
+name: code-review
+version: "1.0"
+description: "Lightweight pipeline: review existing code and report findings"
+execution:
+  mode: sequential
+steps:
+  - id: review
+    name: Review Code
+    agent: critic
+    artifact: review.md
+    gate: true
+    tags: [quality]
+  - id: report
+    name: Report Findings
+    agent: reporter
+    artifact: report.md
+    depends_on: [review]
+    tags: [product]

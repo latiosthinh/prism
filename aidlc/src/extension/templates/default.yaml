@@ -1,0 +1,70 @@
+name: default
+version: "1.0"
+description: "Full SDLC: brainstorm → requirements → design → tasks → implement → verify → test → report"
+execution:
+  mode: sequential
+steps:
+  - id: brainstorm
+    name: Brainstorm
+    agent: idea-expander
+    artifact: idea.md
+    gate: true
+    tags: [product]
+  - id: requirements
+    name: Requirements
+    agent: requirements-engineer
+    artifact: requirements.md
+    depends_on: [brainstorm]
+    gate: true
+    tags: [product]
+  - id: design
+    name: Design
+    agent: architect
+    artifact: design.md
+    depends_on: [requirements]
+    gate: true
+    tags: [technical]
+  - id: tasks
+    name: Tasks
+    agent: task-generator
+    artifact: tasks.md
+    depends_on: [design]
+    gate: true
+    tags: [technical]
+  - id: implementation
+    name: Implementation
+    agent: executor
+    artifact: tasks.md
+    depends_on: [tasks]
+    gate: false
+    tags: [code, build, implement]
+    loop:
+      mode: task
+      agent: critic
+      maxIterations: 3
+  - id: build-verify
+    name: Build Verify
+    agent: critic
+    artifact: build-report.md
+    depends_on: [implementation]
+    gate: false
+    tags: [quality]
+  - id: test-generation
+    name: Test Generation
+    agent: test-writer
+    artifact: tests.md
+    depends_on: [build-verify]
+    gate: false
+    tags: [quality]
+  - id: report
+    name: Report
+    agent: reporter
+    artifact: report.md
+    depends_on: [test-generation]
+    gate: true
+    tags: [product]
+loop_groups:
+  - name: implementation-verify
+    steps: [implementation, build-verify]
+    maxIterations: 3
+    exitOn: all_pass
