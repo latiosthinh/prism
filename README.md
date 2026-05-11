@@ -4,7 +4,7 @@
 
 PRISM is a multi-provider AI development orchestration engine that transforms raw ideas into production-ready code through structured, gated pipelines. It connects 30+ AI providers into a unified system where every step is reviewable, every decision is logged, and every artifact is source-controlled.
 
-[![Build Status](https://img.shields.io/badge/build-passing-brightgreen)]()
+[![CI](https://github.com/latiosthinh/prism/actions/workflows/ci.yml/badge.svg)](https://github.com/latiosthinh/prism/actions/workflows/ci.yml)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.7-blue)]()
 [![License](https://img.shields.io/badge/license-MIT-green)]()
 [![Providers](https://img.shields.io/badge/providers-30+-purple)]()
@@ -73,14 +73,14 @@ Run different steps with different AI providers. Mix Cursor SDK, Pi SDK (30+ pro
 Every agent writes to Markdown files. Code goes in source files. Artifacts are the source of truth — diffable, reviewable, and git-friendly.
 
 ```
-.aidlc/runs/<run-id>/
+.PRISM/runs/<run-id>/
 ├── state.json              # Full run state
-├── artifacts/              # Agent outputs
-│   ├── design.md
-│   ├── tasks.md
-│   └── review.md
-└── decisions/              # Append-only audit trail
-    └── decisions.jsonl
+├── steps/                  # Per-step artifacts
+│   ├── <step-id>/
+│   │   ├── latest.md
+│   │   └── archive/
+│   │       └── rev-1.md
+└── events.jsonl            # Append-only event log
 ```
 
 ---
@@ -90,32 +90,42 @@ Every agent writes to Markdown files. Code goes in source files. Artifacts are t
 ### Install
 
 ```bash
-git clone https://github.com/your-org/prism.git
+git clone https://github.com/latiosthinh/prism.git
 cd prism
 npm install
 npm run build
 ```
 
-### Configure
+### Option A: VS Code Extension
 
-Set your AI provider in VS Code settings:
+1. Open the workspace in VS Code
+2. Set your AI provider (API keys are stored securely in VS Code SecretStorage):
+   ```json
+   {
+     "prism.backend": "pi",
+     "prism.piProvider": "anthropic",
+     "prism.piModel": "claude-sonnet-4-20250514",
+     "prism.piApiKey": "sk-ant-..."
+   }
+   ```
+3. Open Command Palette → `PRISM: Open Pipeline`
+4. Select a template or create custom
+5. Enter your idea and watch the pipeline execute
 
-```json
-{
-  "prism.backend": "pi",
-  "prism.piProvider": "anthropic",
-  "prism.piModel": "claude-sonnet-4-20250514",
-  "prism.piApiKey": "sk-ant-..."
-}
+### Option B: PRISM CLI
+
+```bash
+# Interactive REPL
+npx @prism/cli --workspace /path/to/project
+
+# One-shot commands
+npx @prism/cli --list-pipelines
+npx @prism/cli --run feature-build --idea "Add dark mode"
+npx @prism/cli --dry-run code-review
+npx @prism/cli --status
 ```
 
-### Run
-
-1. Open Command Palette → `PRISM: Open Pipeline`
-2. Select a template or create custom
-3. Enter your idea
-4. Watch the pipeline execute step-by-step
-5. Approve or reject each gated step
+See the [CLI section](#-prism-cli) below for full details.
 
 ---
 
@@ -157,6 +167,16 @@ packages/
       tools.ts            # Tool definitions & validation
       types.ts            # TypeScript interfaces
 
+  prism-cli/              # @prism/cli - Interactive CLI agent
+    src/
+      index.ts            # REPL entry point + one-shot commands
+      cli-agent.ts        # PRISMCliAgent with pipeline tools
+      cli-engine.ts       # Self-contained pipeline engine
+      slash-commands.ts   # 16 built-in slash commands
+      tools.ts            # 10 AI function-calling tools
+      config.ts           # Config loader (.prismrc, env, flags)
+      output.ts           # Terminal rendering
+
 prism/                    # VS Code Extension
   src/
     engine/
@@ -166,10 +186,13 @@ prism/                    # VS Code Extension
         step-runner.ts    # Cursor + Anthropic runners
         pi-sdk-runner.ts  # Pi SDK runner with tool execution
       agents/             # 12 built-in AI agents
+      errors/             # Human-readable error messages
     extension/
       engine-bridge.ts    # Multi-backend factory
       templates/          # Pipeline YAML templates
     panel/                # React UI components
+  schemas/
+    pipeline-schema.json  # JSON Schema for YAML validation
 ```
 
 ---
@@ -234,24 +257,107 @@ PRISM includes 8 pre-built templates:
 
 ---
 
+## 💻 PRISM CLI
+
+The CLI provides an interactive REPL with slash commands and AI-powered pipeline management.
+
+### Interactive Mode
+
+```
+$ npx @prism/cli --workspace /path/to/project
+
+  PRISM CLI v0.2 — Interactive Pipeline Agent
+  Workspace: /path/to/project
+  Backend:   pi / claude-sonnet-4-20250514
+  Type /help for commands, or just start chatting.
+
+> What pipelines do I have?
+[AI calls list_pipelines tool, streams response]
+
+> /pipeline-run feature-build --idea "Add dark mode toggle"
+  ⟳ expand-idea: Expand Idea...
+  ✓ expand-idea: approved
+  ⟳ architect: Architect Plan...
+
+> /exit
+```
+
+### Slash Commands
+
+| Command | Description |
+|---------|-------------|
+| `/pipelines-list` | Table of all available pipelines |
+| `/pipelines-create <template>` | Create a new pipeline from template |
+| `/pipeline-run <name> [--idea "..."]` | Start a pipeline run |
+| `/pipeline-status` | Show current run progress |
+| `/pipeline-resume` | Resume last failed/paused run |
+| `/pipeline-dry-run <name>` | Validate without AI calls |
+| `/runs-list` | List past runs |
+| `/runs-view <id>` | View run details + decisions |
+| `/runs-artifact <run-id> <step-id>` | View step artifact output |
+| `/agents-list` | Available agents (built-in + custom) |
+| `/skills-list` | Available skills |
+| `/settings` | Current configuration |
+| `/backend <cursor|pi|anthropic>` | Switch AI backend |
+| `/model <model>` | Switch AI model |
+| `/help` | Show all commands |
+| `/exit` | Quit |
+
+### One-Shot Flags
+
+```bash
+npx @prism/cli --list-pipelines          # List all pipelines
+npx @prism/cli --list-runs               # List all runs
+npx @prism/cli --status                  # Show latest run status
+npx @prism/cli --run feature-build       # Run a pipeline
+npx @prism/cli --run feature-build --idea "Add dark mode"
+npx @prism/cli --dry-run code-review     # Validate pipeline
+```
+
+### Configuration
+
+Config sources (priority order):
+1. CLI flags: `--backend pi --model claude-sonnet-4-20250514`
+2. `.prismrc` JSON file in workspace or home directory
+3. Environment variables: `PRISM_BACKEND`, `PRISM_PROVIDER`, `PRISM_MODEL`, `PRISM_PI_API_KEY`
+
+### AI Agent Tools
+
+The CLI agent has 10 function-calling tools so the AI can manage pipelines directly:
+
+| Tool | Purpose |
+|------|---------|
+| `list_pipelines` | Get available pipelines |
+| `create_pipeline` | Create from template |
+| `run_pipeline` | Execute a pipeline |
+| `get_run_status` | Check run progress |
+| `list_runs` | Browse run history |
+| `get_run_artifact` | Read step output |
+| `list_agents` | See available agents |
+| `list_skills` | See available skills |
+| `read_file` | Read workspace files |
+| `bash` | Execute shell commands (with allowedCommands) |
+
+---
+
 ## 🔧 Configuration
 
 ### VS Code Settings
+
+API keys are stored securely in VS Code's encrypted SecretStorage. Configure them via the PRISM Settings panel.
 
 ```json
 {
   "prism.backend": "pi",
   "prism.piProvider": "anthropic",
   "prism.piModel": "claude-sonnet-4-20250514",
-  "prism.piApiKey": "sk-ant-...",
-  "prism.apiKey": "key_...",
-  "prism.model": "claude-sonnet-4-20250514",
-  "prism.maxTokens": 8192,
-  "prism.autoApproveYolo": false,
+  "prism.gates.autoApprove": false,
   "prism.commandConfirmation": true,
   "prism.allowedCommands": ["ls", "cat", "grep", "find"]
 }
 ```
+
+> **Note:** `prism.apiKey` and `prism.piApiKey` are deprecated — keys are now stored in SecretStorage. `prism.autoApproveYolo` has been replaced by `prism.gates.autoApprove`.
 
 ### Per-Step Backend Override
 
@@ -329,15 +435,26 @@ for await (const event of agent.stream('Build a web app')) {
 ```
 prism/
 ├── packages/
-│   └── prism-sdk/              # @prism/sdk
+│   ├── prism-sdk/              # @prism/sdk
+│   │   ├── src/
+│   │   │   ├── agent.ts        # OpenCodeAgent
+│   │   │   ├── llm.ts          # LLM client
+│   │   │   ├── tools.ts        # Tool framework
+│   │   │   └── types.ts        # TypeScript types
+│   │   ├── tests/
+│   │   │   ├── agent.test.ts
+│   │   │   └── llm.test.ts
+│   │   └── package.json
+│   │
+│   └── prism-cli/              # @prism/cli
 │       ├── src/
-│       │   ├── agent.ts        # OpenCodeAgent
-│       │   ├── llm.ts          # LLM client
-│       │   ├── tools.ts        # Tool framework
-│       │   └── types.ts        # TypeScript types
-│       ├── tests/
-│       │   ├── agent.test.ts
-│       │   └── llm.test.ts
+│       │   ├── index.ts        # REPL entry point
+│       │   ├── cli-agent.ts    # AI agent with tools
+│       │   ├── cli-engine.ts   # Pipeline engine
+│       │   ├── slash-commands.ts # 16 slash commands
+│       │   ├── tools.ts        # 10 AI function-calling tools
+│       │   ├── config.ts       # Config loader
+│       │   └── output.ts       # Terminal rendering
 │       └── package.json
 │
 ├── prism/                      # VS Code Extension
@@ -346,20 +463,27 @@ prism/
 │   │   │   ├── pipeline/       # Schema, loader, validator
 │   │   │   ├── orchestrator/   # State machine, loops
 │   │   │   ├── runner/         # Step runners
-│   │   │   └── agents/         # Built-in agents
+│   │   │   ├── agents/         # Built-in agents
+│   │   │   ├── errors/         # Friendly error messages
+│   │   │   └── artifacts/      # Skill loader
 │   │   ├── extension/
 │   │   │   ├── engine-bridge.ts
 │   │   │   └── templates/      # YAML templates
 │   │   └── panel/              # React UI
+│   ├── schemas/
+│   │   └── pipeline-schema.json # JSON Schema for YAML
 │   ├── tests/
 │   │   └── pi-sdk-runner.test.ts
 │   └── package.json
 │
-├── .planning/                  # Project planning
-│   ├── ROADMAP.md
-│   ├── PROJECT.md
-│   └── STATE.md
+├── .github/
+│   └── workflows/
+│       ├── ci.yml              # CI: lint + test + build
+│       └── release.yml         # Release: .vsix packaging
 │
+├── CONTRIBUTING.md             # Contributing guide
+├── docs/
+│   └── roadmap.md              # v0.1 → v1.0 roadmap
 └── README.md
 ```
 
@@ -372,6 +496,9 @@ prism/
 ```bash
 # Build SDK
 npm run build --workspace=@prism/sdk
+
+# Build CLI
+npm run build --workspace=@prism/cli
 
 # Build extension
 npm run build --workspace=prism
@@ -393,29 +520,88 @@ npm test --workspace=prism
 npm run dev --workspace=prism
 ```
 
+### CI/CD
+
+PRISM uses GitHub Actions for continuous integration:
+
+- **CI** — runs lint, test, and build on every push and PR
+- **Release** — packages `.vsix` artifact on version tag pushes
+
+See `.github/workflows/` for details.
+
 ---
 
 ## 📜 Git History
 
-Clean, atomic commits:
+Clean, atomic commits organized by phase:
 
 ```
-0e846d6 fix 4: add unit tests for OpenCodeAgent, LLM client, and PiSdkStepRunner
-f521839 fix 5: extract YAML templates from engine-bridge.ts to separate files
-318e7b4 fix 8: add .prism/ to .gitignore by default
-97cfb49 fix 7: add actual execute handlers to tools in pi-sdk-runner.ts
-5f60fa1 fix 3+6: make OpenCodeAgent.stream() truly streaming + fix getApiKey fallback
-354b383 fix 2: replace (this as any) casts with mutable internal properties
-ef512b1 fix 1: update writePrismSettings to include backend fields
-c6939f2 final: update ROADMAP and STATE with completion summary
-7c20770 phase 5: create comprehensive documentation
-4dbcf18 phase 4 part 3: add backend selection UI
-b42c64e phase 4 part 2: update extension.ts
-35f23d0 phase 4 part 1: update package.json
-429405f phase 3: create PiSdkStepRunner and EngineBridge
-f62f618 phase 2: create @prism/sdk package
-0015142 init: project structure and planning docs
+# v0.2 — CLI
+2bb4a19 feat(cli): interactive REPL with AI agent and pipeline execution
+49d84c5 feat(cli): AI agent tools for pipeline function calling
+64fbd67 feat(cli): slash command system with 16 built-in commands
+0ab5baa feat(cli): engine integration layer for pipeline management
+fa319b6 feat(cli): scaffold @prism/cli package with config and output modules
+
+# v0.2 — Developer Experience
+dc45c3f feat(dx): human-readable error messages with suggested actions
+357ba36 feat(dx): prism init CLI command for scaffolding pipeline projects
+6785141 feat(dx): PRISM YAML language support via JSON Schema
+
+# v0.2 — Pipeline Engine
+34bed39 feat(engine): artifact diff view at approval gates
+09e8f2a feat(engine): full pipeline dry-run validation mode
+5fd6879 feat(engine): step retry with exponential backoff
+62e7bfd feat(engine): resume from any step checkpoint
+
+# v0.2 — Docs + CI
+5c376cc docs: add CONTRIBUTING.md, custom-agents.md, and providers.md
+c9f2fb7 feat(ci): add GitHub Actions CI and release workflows
+
+# v0.2 — Security
+6d26b52 feat(security): enforce allowedCommands in pi-sdk bash tool
+68766fa feat(security): migrate API keys to VS Code SecretStorage
 ```
+
+---
+
+## 🆕 What's New in v0.2
+
+### Security & Credentials
+- **SecretStorage migration** — API keys stored in VS Code's encrypted SecretStorage, not plain text
+- **Command allowlist** — `bash` tool enforces `allowedCommands` with wildcard pattern support
+- **`prism.gates.autoApprove`** — replaces `autoApproveYolo` with proper warning UI
+
+### Pipeline Engine
+- **Resume from any step** — restart failed/paused runs from any checkpoint
+- **Retry with backoff** — configurable `retryDelayMs` and `retryBackoffMultiplier` per step
+- **Full dry-run mode** — validates YAML schema, dependencies, agents, skills without AI calls
+- **Artifact diff at gates** — see what changed before approving
+
+### Developer Experience
+- **YAML language support** — JSON Schema for autocomplete and validation in VS Code
+- **`prism init` command** — scaffold a pipeline project with template picker
+- **Human-readable errors** — categorized error messages with suggested actions
+
+### CI/CD & Distribution
+- **GitHub Actions CI** — lint + test + build on every PR
+- **Automated releases** — `.vsix` artifacts on version tags
+- **Marketplace metadata** — categories, keywords, repository links
+
+### PRISM CLI (New!)
+- **Interactive REPL** — chat with AI agent that has pipeline management tools
+- **16 slash commands** — `/pipelines-list`, `/pipeline-run`, `/pipeline-resume`, etc.
+- **One-shot flags** — `--run`, `--dry-run`, `--list-pipelines`, `--status`
+- **Config sources** — `.prismrc`, env vars, CLI flags
+
+---
+
+## 📖 Documentation
+
+- [Contributing Guide](CONTRIBUTING.md) — dev setup, coding conventions, PR process
+- [Custom Agents](prism/docs/custom-agents.md) — write and register your own agents
+- [Providers](prism/docs/providers.md) — full provider capability matrix and configuration
+- [Roadmap](docs/roadmap.md) — v0.1 → v1.0 planned features
 
 ---
 
@@ -424,9 +610,11 @@ f62f618 phase 2: create @prism/sdk package
 1. **Multi-Provider** — Don't lock into one AI. Use the best model for each step.
 2. **Structured** — No more lost context in chat. Every step produces artifacts.
 3. **Auditable** — Every decision logged, every artifact tracked in git.
-4. **Reproducible** — Replay any run. Resume from any step.
+4. **Reproducible** — Replay any run. Resume from any step. Retry with backoff.
 5. **Extensible** — Custom agents, custom skills, custom pipelines.
 6. **Open** — MIT licensed. No vendor lock-in. 30+ providers.
+7. **CLI + IDE** — Use it in VS Code or from your terminal. Interactive REPL with slash commands.
+8. **Secure** — API keys in encrypted SecretStorage. Command allowlist enforcement.
 
 ---
 
