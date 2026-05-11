@@ -398,11 +398,11 @@ export class EngineBridge {
   skills: SkillEntry[] = [];
 
   private readonly _workspaceRoot: string;
-  private readonly _apiKey?: string;
-  private readonly _backend: "cursor" | "pi" | "anthropic";
-  private readonly _piProvider: string;
-  private readonly _piModel: string;
-  private readonly _piApiKey?: string;
+  private _apiKey?: string;
+  private _backend: "cursor" | "pi" | "anthropic";
+  private _piProvider: string;
+  private _piModel: string;
+  private _piApiKey?: string;
   private readonly _log: BridgeLogger;
   private readonly _onStateUpdate: BridgeConfig["onStateUpdate"];
   private readonly _onAgentEvent: BridgeConfig["onAgentEvent"];
@@ -470,15 +470,15 @@ export class EngineBridge {
   }
 
   updateApiKey(apiKey: string | undefined): void {
-    (this as any)._apiKey = apiKey;
+    this._apiKey = apiKey;
     this._runner = this.createRunner(this._backend);
   }
 
   updateBackend(backend: "cursor" | "pi" | "anthropic", options?: { piProvider?: string; piModel?: string; piApiKey?: string }): void {
-    (this as any)._backend = backend;
-    if (options?.piProvider) (this as any)._piProvider = options.piProvider;
-    if (options?.piModel) (this as any)._piModel = options.piModel;
-    if (options?.piApiKey) (this as any)._piApiKey = options.piApiKey;
+    this._backend = backend;
+    if (options?.piProvider) this._piProvider = options.piProvider;
+    if (options?.piModel) this._piModel = options.piModel;
+    if (options?.piApiKey) this._piApiKey = options.piApiKey;
     this._runner = this.createRunner(backend);
   }
 
