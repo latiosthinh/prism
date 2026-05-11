@@ -11,6 +11,7 @@ import {
   Decision,
   PipelineDefinition,
 } from "./engine/index.js";
+import { TEMPLATE_NAMES } from "./extension/templates/index.js";
 
 const PANEL_SCRIPT = "panel/assets/index.js";
 const PANEL_STYLE = "panel/assets/index.css";
@@ -738,6 +739,42 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       } else {
         vscode.window.showErrorMessage(
           `PRISM: SDK verify failed — ${result.message ?? "unknown error"}`,
+        );
+      }
+    }),
+    vscode.commands.registerCommand("prism.init", async () => {
+      const templates = [...TEMPLATE_NAMES];
+      const pick = await vscode.window.showQuickPick(
+        templates.map((t) => ({
+          label: t,
+          description: `${t.charAt(0).toUpperCase() + t.slice(1)} pipeline`,
+        })),
+        { placeHolder: "Select a pipeline template", title: "PRISM: Initialize Pipeline" },
+      );
+      if (!pick) return;
+
+      try {
+        bridge.ensureSkeletonExists();
+        const result = bridge.cloneFromTemplate(pick.label);
+        if (!result) {
+          vscode.window.showErrorMessage(`Failed to create pipeline from template "${pick.label}"`);
+          return;
+        }
+        const pipelineFile = path.join(
+          wsRoot,
+          ".PRISM",
+          "pipelines",
+          `${result.name}.yaml`,
+        );
+        const doc = await vscode.workspace.openTextDocument(pipelineFile);
+        await vscode.window.showTextDocument(doc);
+        vscode.window.showInformationMessage(
+          `Pipeline "${result.name}" created from template "${pick.label}" — open the PRISM panel to run it.`,
+        );
+        showPanel();
+      } catch (err: any) {
+        vscode.window.showErrorMessage(
+          `Failed to initialize: ${err?.message ?? err}`,
         );
       }
     }),

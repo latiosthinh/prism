@@ -86,6 +86,10 @@
       {
         "command": "prism.verifyCursorSdk",
         "title": "PRISM: Verify Cursor SDK"
+      },
+      {
+        "command": "prism.init",
+        "title": "PRISM: Initialize Pipeline Project"
       }
     ],
     "configuration": {
