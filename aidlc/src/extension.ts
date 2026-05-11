@@ -834,6 +834,10 @@ async function runVerifyCursorSdk(
 /** All AIDLC settings the panel cares about, read from VS Code workspace config. */
 function readAidlcSettings(): {
   apiKey: string;
+  backend: "cursor" | "pi" | "anthropic";
+  piProvider: string;
+  piModel: string;
+  piApiKey: string;
   model: string;
   modelOverride: string;
   maxTokens: number;
@@ -845,6 +849,10 @@ function readAidlcSettings(): {
   const cfg = vscode.workspace.getConfiguration("aidlc");
   return {
     apiKey: cfg.get<string>("apiKey", "") ?? "",
+    backend: cfg.get<"cursor" | "pi" | "anthropic">("backend", "cursor") ?? "cursor",
+    piProvider: cfg.get<string>("piProvider", "anthropic") ?? "anthropic",
+    piModel: cfg.get<string>("piModel", "claude-sonnet-4-20250514") ?? "claude-sonnet-4-20250514",
+    piApiKey: cfg.get<string>("piApiKey", "") ?? "",
     model: cfg.get<string>("model", "claude-sonnet-4-20250514") ?? "",
     modelOverride: cfg.get<string>("modelOverride", "") ?? "",
     maxTokens: cfg.get<number>("maxTokens", 8192) ?? 8192,
@@ -870,6 +878,10 @@ async function writeAidlcSettings(
     : vscode.ConfigurationTarget.Global;
   const allowed: Record<string, "string" | "number" | "boolean"> = {
     apiKey: "string",
+    backend: "string",
+    piProvider: "string",
+    piModel: "string",
+    piApiKey: "string",
     model: "string",
     modelOverride: "string",
     maxTokens: "number",
