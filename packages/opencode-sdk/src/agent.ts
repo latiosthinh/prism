@@ -32,7 +32,7 @@ export class OpenCodeAgent {
         });
       },
       getApiKey: async (provider: string) => {
-        return config.apiKey || process.env[`${provider.toUpperCase()}_API_KEY`] || '';
+        return config.apiKey || process.env[`${provider.toUpperCase()}_API_KEY`] || undefined;
       },
     });
 
@@ -120,45 +120,58 @@ export class OpenCodeAgent {
     }
   }
 
-  async stream(message: string): Promise<AsyncIterable<AgentEvent>> {
-    const events: AgentEvent[] = [];
-    let resolveStream: () => void;
-    const streamPromise = new Promise<void>((resolve) => {
-      resolveStream = resolve;
-    });
+  async *stream(message: string): AsyncIterable<AgentEvent> {
+    const queue: AgentEvent[] = [];
+    let done = false;
+    let error: Error | null = null;
+    let resolveNext: (() => void) | null = null;
 
     const unsubscribe = this.agent.subscribe(async (event: any) => {
       const mappedEvent = this.mapAgentEvent(event);
-      events.push(mappedEvent);
+      queue.push(mappedEvent);
       this.emit(mappedEvent);
+      if (resolveNext) {
+        resolveNext();
+        resolveNext = null;
+      }
+    });
+
+    const promptPromise = this.agent.prompt({
+      role: 'user',
+      content: [{ type: 'text', text: message }],
+      timestamp: Date.now(),
+    } as AgentMessage).then(async () => {
+      await this.agent.waitForIdle();
+    }).catch((err: any) => {
+      error = err;
+    }).finally(() => {
+      done = true;
+      unsubscribe();
+      if (resolveNext) {
+        resolveNext();
+        resolveNext = null;
+      }
     });
 
     try {
-      await this.agent.prompt({
-        role: 'user',
-        content: [{ type: 'text', text: message }],
-        timestamp: Date.now(),
-      } as AgentMessage);
+      while (!done || queue.length > 0) {
+        if (queue.length === 0 && !done) {
+          await new Promise<void>((resolve) => {
+            resolveNext = resolve;
+          });
+        }
 
-      await this.agent.waitForIdle();
-      resolveStream!();
+        while (queue.length > 0) {
+          yield queue.shift()!;
+        }
+
+        if (error) {
+          throw error;
+        }
+      }
     } finally {
-      unsubscribe();
+      await promptPromise;
     }
-
-    return {
-      [Symbol.asyncIterator]: () => {
-        let index = 0;
-        return {
-          async next() {
-            if (index < events.length) {
-              return { value: events[index++], done: false };
-            }
-            return { value: undefined, done: true };
-          },
-        };
-      },
-    };
   }
 
   abort(): void {
