@@ -460,7 +460,7 @@ export class EngineBridge {
     }
   }
 
-  async resumeRun(): Promise<void> {
+  async resumeRun(resumeFromStep?: string): Promise<void> {
     const runs = this._runStore.listRuns();
     if (runs.length === 0) {
       this._onError("No previous runs found to resume");
@@ -475,8 +475,79 @@ export class EngineBridge {
     const pipeline = this._loader.loadPipeline(state.pipelineName);
     this._currentRun = state;
     this._activePipeline = pipeline;
-    this._onStateUpdate(this.getBridgeState());
-    await this.startRun(state.pipelineName, pipeline, state.idea);
+
+    // Find the step to resume from: use explicit override, then find first failed/paused step
+    let targetStep = resumeFromStep;
+    if (!targetStep) {
+      for (const step of pipeline.steps) {
+        const s = state.steps[step.id];
+        if (s && (s.status === "failed" || s.status === "in_review" || s.status === "rejected")) {
+          targetStep = step.id;
+          break;
+        }
+      }
+    }
+
+    // Reset failed/rejected target step so it can be retried
+    if (targetStep && state.steps[targetStep]) {
+      const target = state.steps[targetStep];
+      if (target.status !== "in_review") {
+        target.status = "pending";
+        target.error = undefined;
+        target.retriesRemaining = pipeline.steps.find((s) => s.id === targetStep)?.maxRetries ?? 3;
+      }
+    }
+
+    this._signal = new AbortController();
+    this._gateResolvers.clear();
+
+    const pushState = (): void => {
+      this._onStateUpdate(this.getBridgeState());
+    };
+    pushState();
+
+    const waitForGate = (stepId: string): Promise<void> =>
+      new Promise<void>((resolve) => {
+        this._gateResolvers.set(stepId, resolve);
+      });
+
+    try {
+      await this._orchestrator.run(pipeline, state, {
+        cwd: this._workspaceRoot,
+        runner: this._runner,
+        agentRegistry: this._registry,
+        onEvent: (ev) => {
+          this._runStore.appendEvent(state.runId, ev);
+          if (ev.type === "prompt") {
+            const revision = state.steps[ev.stepId]?.revision ?? 0;
+            this._runStore.savePrompt(state.runId, ev.stepId, revision, ev.content, ev.metadata as Record<string, unknown> | undefined);
+          }
+          this._onAgentEvent(ev);
+          this._onAgentStatus({ stepId: ev.stepId, stepName: ev.stepId, status: ev.type, progress: ev.content });
+        },
+        onDecision: (d) => {
+          state.decisions.push(d);
+          this._onDecision(d);
+          try {
+            this._runStore.saveState(state);
+          } catch (err: any) {
+            this._log.appendLine(`[bridge] saveState failed: ${err?.message ?? err}`);
+          }
+          pushState();
+        },
+        waitForGate,
+        signal: this._signal.signal,
+      }, targetStep);
+    } catch (err: any) {
+      const msg = err?.message ?? String(err);
+      this._log.appendLine(`[bridge] resume orchestrator error: ${msg}`);
+      this._onError(msg);
+    } finally {
+      try {
+        this._runStore.saveState(state);
+      } catch { /* ignore */ }
+      pushState();
+    }
   }
 
   listRuns(): RunSummary[] {

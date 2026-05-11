@@ -87,6 +87,10 @@ export const Pipeline: React.FC<PipelineProps> = ({
     send({ type: "rejectStep", stepId });
   };
 
+  const handleResume = (stepId: string): void => {
+    send({ type: "resumeRun", stepId });
+  };
+
   const handleOpenArtifact = (stepId: string): void => {
     const step = state?.steps.find((s) => s.id === stepId);
     if (!step?.outputArtifact) return;
@@ -182,6 +186,7 @@ export const Pipeline: React.FC<PipelineProps> = ({
                 onOpenArtifact={handleOpenArtifact}
                 onApprove={handleApprove}
                 onReject={handleReject}
+                onResume={handleResume}
               />
             ))}
           </div>

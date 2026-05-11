@@ -38,7 +38,7 @@ export class StateMachine {
   }
 
   isStepComplete(status: StepStatus): boolean {
-    return status === "approved" || status === "skipped";
+    return status === "approved" || status === "skipped" || status === "resumed";
   }
 
   allStepsComplete(run: PipelineRunState, stepOrder: string[]): boolean {

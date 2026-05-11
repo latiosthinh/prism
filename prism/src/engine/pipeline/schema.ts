@@ -92,6 +92,7 @@ export type StepStatus =
   | "approved"
   | "rejected"
   | "skipped"
+  | "resumed"
   | "failed";
 
 export const STEP_STATUS_TRANSITIONS: Record<StepStatus, StepStatus[]> = {
@@ -101,6 +102,7 @@ export const STEP_STATUS_TRANSITIONS: Record<StepStatus, StepStatus[]> = {
   approved: ["running", "rejected"],
   rejected: ["running"],
   skipped: [],
+  resumed: [],
   failed: ["running"],
 };
 

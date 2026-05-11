@@ -50,6 +50,7 @@ export class LoopOrchestrator {
     pipeline: PipelineDefinition,
     run: PipelineRunState,
     config: OrchestratorConfig,
+    resumeFromStep?: string,
   ): Promise<void> {
     const {
       cwd,
@@ -122,7 +123,27 @@ export class LoopOrchestrator {
       `Pipeline "${pipeline.name}" started (${order.length} steps)`,
     );
 
-    let i = 0;
+    let resumeIdx = 0;
+    if (resumeFromStep) {
+      const idx = order.indexOf(resumeFromStep);
+      if (idx >= 0) {
+        resumeIdx = idx;
+        // Mark all steps before resume point as "resumed" if not already complete
+        for (let j = 0; j < resumeIdx; j++) {
+          const sid = order[j];
+          const s = run.steps[sid];
+          if (s && !this.machine.isStepComplete(s.status)) {
+            s.status = "resumed";
+          }
+        }
+        decision(
+          "user_note",
+          `Resuming from step "${resumeFromStep}" (skipped ${resumeIdx} steps)`,
+        );
+      }
+    }
+
+    let i = resumeIdx;
     while (i < order.length) {
       if (signal?.aborted) {
         this.machine.setRunStatus(run, "cancelled");

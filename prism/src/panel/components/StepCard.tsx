@@ -9,6 +9,7 @@ interface StepCardProps {
   onOpenArtifact?: (stepId: string) => void;
   onApprove?: (stepId: string) => void;
   onReject?: (stepId: string) => void;
+  onResume?: (stepId: string) => void;
 }
 
 interface StatusVisual {
@@ -64,11 +65,11 @@ const VISUALS: Record<string, StatusVisual> = {
     trailing: "FAILED",
     trailingClass: "text-error",
   },
-  skipped: {
-    icon: "skip_next",
+  resumed: {
+    icon: "fast_forward",
     iconClass: "text-outline",
-    label: "Skipped",
-    trailing: "SKIPPED",
+    label: "Resumed",
+    trailing: "RESUMED",
     trailingClass: "text-outline",
   },
 };
@@ -79,11 +80,13 @@ export const StepCard: React.FC<StepCardProps> = ({
   onOpenArtifact,
   onApprove,
   onReject,
+  onResume,
 }) => {
   const visual = VISUALS[step.status] ?? VISUALS.pending;
   const isRunning = step.status === "running";
   const isPending = step.status === "pending";
   const inReview = step.status === "in_review";
+  const isFailedOrRejected = step.status === "failed" || step.status === "rejected";
   const clickable =
     !!step.outputArtifact && typeof onOpenArtifact === "function";
 
@@ -178,6 +181,19 @@ export const StepCard: React.FC<StepCardProps> = ({
       {step.error && (
         <div className="font-mono-code text-mono-code text-error bg-error/10 border border-error/30 rounded px-sm py-xs whitespace-pre-wrap break-words">
           {step.error}
+        </div>
+      )}
+
+      {isFailedOrRejected && onResume && (
+        <div onClick={(e) => e.stopPropagation()}>
+          <button
+            type="button"
+            onClick={() => onResume(step.id)}
+            className="px-md py-xs font-label-caps text-label-caps uppercase bg-[#3b82f6] text-white rounded font-bold hover:opacity-90 transition-opacity flex items-center gap-xs"
+          >
+            <Icon name="replay" size={14} />
+            Resume from here
+          </button>
         </div>
       )}
 

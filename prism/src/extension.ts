@@ -231,7 +231,8 @@ class PipelinePanel {
           break;
         case "resumeRun":
           try {
-            await this._bridge.resumeRun();
+            const stepId: string | undefined = msg.stepId;
+            await this._bridge.resumeRun(stepId);
           } catch (err: any) {
             this.postMessage({
               type: "error",
