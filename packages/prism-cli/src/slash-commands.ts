@@ -1,4 +1,4 @@
-import type { CliEngine, PipelineDetail, RunSummary, RunState } from "./cli-engine.js";
+import type { CliEngine, PipelineDetail, RunSummary, RunStateSummary } from "./cli-engine.js";
 import type { SlashCommand } from "./types.js";
 import * as output from "./output.js";
 
@@ -131,7 +131,7 @@ export function createSlashCommands(engine: CliEngine): SlashCommand[] {
           return;
         }
         const latest = runs[0];
-        const state = engine.loadRun(latest.runId);
+        const state: RunStateSummary | null = engine.loadRun(latest.runId);
         if (!state) {
           output.error("Failed to load run state");
           return;
@@ -172,7 +172,7 @@ export function createSlashCommands(engine: CliEngine): SlashCommand[] {
         }
 
         output.info(`Resuming run: ${latest.pipelineName} (${latest.runId})`);
-        const state = engine.loadRun(latest.runId);
+        const state: RunStateSummary | null = engine.loadRun(latest.runId);
         if (!state) {
           output.error("Failed to load run state");
           return;

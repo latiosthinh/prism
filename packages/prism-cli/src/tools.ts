@@ -1,7 +1,7 @@
 import * as fs from "fs";
 import * as path from "path";
 import { execSync } from "child_process";
-import type { CliEngine } from "./cli-engine.js";
+import { CliEngine } from "./cli-engine.js";
 import type { AgentTool } from "@prism/sdk";
 import { Type } from "@earendil-works/pi-ai";
 
