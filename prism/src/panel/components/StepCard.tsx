@@ -84,6 +84,7 @@ export const StepCard: React.FC<StepCardProps> = ({
 }) => {
   const visual = VISUALS[step.status] ?? VISUALS.pending;
   const [showDiff, setShowDiff] = useState(false);
+  const [showErrorDetail, setShowErrorDetail] = useState(false);
   const isRunning = step.status === "running";
   const isPending = step.status === "pending";
   const inReview = step.status === "in_review";
@@ -180,8 +181,31 @@ export const StepCard: React.FC<StepCardProps> = ({
       )}
 
       {step.error && (
-        <div className="font-mono-code text-mono-code text-error bg-error/10 border border-error/30 rounded px-sm py-xs whitespace-pre-wrap break-words">
-          {step.error}
+        <div className="text-error bg-error/10 border border-error/30 rounded px-sm py-xs" onClick={(e) => e.stopPropagation()}>
+          <div className="flex items-center justify-between gap-sm">
+            <div className="flex items-center gap-xs min-w-0">
+              <Icon name="error" size={14} className="shrink-0" />
+              <span className="text-[12px] font-bold">Step Failed</span>
+            </div>
+            {step.error.length > 100 && (
+              <button
+                type="button"
+                onClick={() => setShowErrorDetail((v) => !v)}
+                className="text-[11px] text-on-surface-variant hover:text-on-surface shrink-0"
+              >
+                {showErrorDetail ? "Hide" : "Show"} details
+              </button>
+            )}
+          </div>
+          {showErrorDetail ? (
+            <pre className="mt-xs font-mono-code text-[11px] whitespace-pre-wrap break-words max-h-[200px] overflow-auto bg-surface-container-highest rounded p-xs">
+              {step.error}
+            </pre>
+          ) : (
+            <p className="mt-xs text-[12px] text-on-surface-variant truncate">
+              {step.error.split("\n")[0]}
+            </p>
+          )}
         </div>
       )}
 

@@ -12,6 +12,7 @@ import {
   PipelineDefinition,
 } from "./engine/index.js";
 import { TEMPLATE_NAMES } from "./extension/templates/index.js";
+import { formatErrorMessage } from "./engine/errors/messages.js";
 
 const PANEL_SCRIPT = "panel/assets/index.js";
 const PANEL_STYLE = "panel/assets/index.css";
@@ -551,10 +552,11 @@ class PipelinePanel {
           this._log.appendLine(`[panel] Unknown message type: ${msg.type}`);
       }
     } catch (err: any) {
-      this._log.appendLine(`[panel] handler error: ${err?.message ?? err}`);
+      const raw = err?.message ?? String(err);
+      this._log.appendLine(`[panel] handler error: ${raw}`);
       this.postMessage({
         type: "error",
-        message: err?.message ?? String(err),
+        message: formatErrorMessage(raw),
       });
     }
   }
@@ -616,7 +618,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       },
       onError: (error: string) => {
         log.appendLine(`[bridge] error: ${error}`);
-        vscode.window.showErrorMessage(`PRISM: ${error}`);
+        const friendly = formatErrorMessage(error);
+        vscode.window.showErrorMessage(`PRISM: ${friendly}`);
       },
     },
     log,
