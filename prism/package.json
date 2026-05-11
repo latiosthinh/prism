@@ -28,7 +28,7 @@
     "configuration": {
       "title": "PRISM",
       "properties": {
-        "prism.apiKey": { "type": "string", "description": "Cursor API key for the Cursor SDK runner. Get one at cursor.com → Account → API Keys.", "default": "" },
+        "prism.apiKey": { "type": "string", "description": "Cursor API key for the Cursor SDK runner. Get one at cursor.com → Account → API Keys.", "default": "", "deprecationMessage": "⬆️ API keys are now stored in VS Code SecretStorage. Use PRISM Settings to manage your keys securely." },
         "prism.backend": {
           "type": "string",
           "description": "AI backend to use for pipeline steps",
@@ -52,8 +52,9 @@
         },
         "prism.piApiKey": {
           "type": "string",
-          "description": "API key for PRISM SDK backend. Required when backend is set to 'pi'.",
-          "default": ""
+          "description": "API key for PRISM SDK backend.",
+          "default": "",
+          "deprecationMessage": "⬆️ API keys are now stored in VS Code SecretStorage. Use PRISM Settings to manage your keys securely."
         },
         "prism.model": {
           "type": "string", "description": "Model for agents (only used with Anthropic fallback; Cursor SDK uses composer-2)",
@@ -62,7 +63,8 @@
         },
         "prism.modelOverride": { "type": "string", "description": "Freeform model override — if set, takes precedence", "default": "" },
         "prism.maxTokens": { "type": "number", "description": "Maximum tokens per agent response", "default": 8192 },
-        "prism.autoApproveYolo": { "type": "boolean", "description": "Automatically approve YOLO tasks", "default": false },
+        "prism.autoApproveYolo": { "type": "boolean", "description": "Automatically approve YOLO tasks", "default": false, "deprecationMessage": "⬆️ Replaced by prism.gates.autoApprove. Your setting has been migrated." },
+        "prism.gates.autoApprove": { "type": "boolean", "description": "Auto-approve all gates without human review. ⚠️ Use with caution — agents will execute without manual approval.", "default": false },
         "prism.gitignoreArtifacts": { "type": "boolean", "description": "Add .prism/ to .gitignore", "default": false },
         "prism.gateTimeout": { "type": "number", "description": "Default timeout in seconds for gate approval (0 = no timeout)", "default": 0 },
         "prism.allowedCommands": { "type": "array", "items": {"type":"string"}, "description": "Glob patterns for commands agents are allowed to run", "default": ["ls","cat","grep","find","head","tail","wc","echo","mkdir","touch"] },

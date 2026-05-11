@@ -11,6 +11,7 @@ export interface PRISMSettings {
   modelOverride: string;
   maxTokens: number;
   autoApproveYolo: boolean;
+  gatesAutoApprove: boolean;
   gitignoreArtifacts: boolean;
   gateTimeout: number;
   commandConfirmation: boolean;
@@ -55,6 +56,7 @@ const EMPTY: PRISMSettings = {
   modelOverride: "",
   maxTokens: 8192,
   autoApproveYolo: false,
+  gatesAutoApprove: false,
   gitignoreArtifacts: false,
   gateTimeout: 0,
   commandConfirmation: true,
@@ -129,7 +131,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
           Settings
         </h2>
         <p className="text-on-surface-variant text-body-sm mt-xs">
-          Stored in VS Code workspace settings under <code>prism.*</code>.
+          API keys are stored securely in VS Code SecretStorage. Non-sensitive settings are stored under <code>prism.*</code>.
         </p>
       </div>
 
@@ -170,8 +172,9 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
             </button>
           </div>
           {!revealKey && draft.apiKey && (
-            <div className="text-[11px] text-on-surface-variant font-mono-code mt-xs">
-              {apiKeyMasked} ({draft.apiKey.length} chars)
+            <div className="text-[11px] text-on-surface-variant font-mono-code mt-xs flex items-center gap-xs">
+              <Icon name="lock" size={12} />
+              <span>{apiKeyMasked} ({draft.apiKey.length} chars) — stored securely in VS Code SecretStorage</span>
             </div>
           )}
         </div>
@@ -321,7 +324,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
                 className="w-full bg-surface-container-high border border-outline-variant text-on-surface text-body-sm rounded p-sm focus:border-primary outline-none font-mono-code"
               />
               <p className="text-[11px] text-on-surface-variant mt-xs">
-                API key for the selected provider
+                API key for the selected provider — stored securely in VS Code SecretStorage
               </p>
             </div>
           </div>
@@ -396,11 +399,17 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
 
         <div className="space-y-sm pt-sm">
           <ToggleRow
-            label="Auto-approve YOLO tasks"
-            hint="Skip the human gate for steps tagged 'yolo'."
-            checked={draft.autoApproveYolo}
-            onChange={(v) => update("autoApproveYolo", v)}
+            label="Auto-approve gates"
+            hint="Skip the human gate for all steps. ⚠️ Agents will execute without manual approval."
+            checked={draft.gatesAutoApprove}
+            onChange={(v) => update("gatesAutoApprove", v)}
           />
+          {draft.gatesAutoApprove && (
+            <div className="bg-[#854d0e]/20 border border-[#854d0e]/40 rounded p-sm text-body-sm text-[#fbbf24] flex items-center gap-sm">
+              <Icon name="warning" size={16} />
+              <span>All gates will be auto-approved without review. Use with caution.</span>
+            </div>
+          )}
           <ToggleRow
             label="Add .PRISM/ to .gitignore"
             hint="Keep generated artifacts out of git."

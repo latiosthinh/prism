@@ -73,6 +73,9 @@ export interface BridgeConfig {
   piProvider?: string;
   piModel?: string;
   piApiKey?: string;
+  getSecrets?: (key: string) => Promise<string | undefined>;
+  storeSecret?: (key: string, value: string) => Promise<void>;
+  deleteSecret?: (key: string) => Promise<void>;
   onStateUpdate: (state: BridgeState) => void;
   onAgentEvent: (event: AgentEvent) => void;
   onAgentStatus: (status: AgentStatus) => void;

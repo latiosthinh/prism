@@ -24,6 +24,7 @@ class PipelinePanel {
   private readonly _extUri: vscode.Uri;
   private readonly _log: vscode.LogOutputChannel;
   private readonly _wsRoot: string;
+  private readonly _context: vscode.ExtensionContext;
   private _disposed = false;
   private _disposables: vscode.Disposable[] = [];
 
@@ -32,11 +33,13 @@ class PipelinePanel {
     extUri: vscode.Uri,
     log: vscode.LogOutputChannel,
     wsRoot: string,
+    context: vscode.ExtensionContext,
   ) {
     this._bridge = bridge;
     this._extUri = extUri;
     this._log = log;
     this._wsRoot = wsRoot;
+    this._context = context;
 
     this._panel = vscode.window.createWebviewPanel(
       "prism.pipeline",
@@ -163,10 +166,21 @@ class PipelinePanel {
           const title: string | undefined = msg.title;
           const description: string | undefined = msg.description;
           const customRunId: string | undefined = msg.customRunId;
-          const freshConfig = vscode.workspace.getConfiguration("PRISM");
-          const freshKey = freshConfig.get<string>("apiKey", "");
+          const freshKey = (await this._context.secrets.get("prism.apiKey")) || "";
+          const freshPiKey = (await this._context.secrets.get("prism.piApiKey")) || "";
           if (freshKey) {
             this._bridge.updateApiKey(freshKey);
+          }
+          if (freshPiKey) {
+            const freshConfig = vscode.workspace.getConfiguration("PRISM");
+            this._bridge.updateBackend(
+              freshConfig.get<"cursor" | "pi" | "anthropic">("backend", "cursor"),
+              {
+                piProvider: freshConfig.get<string>("piProvider", "anthropic"),
+                piModel: freshConfig.get<string>("piModel", "claude-sonnet-4-20250514"),
+                piApiKey: freshPiKey || undefined,
+              },
+            );
           }
           const def = this._bridge.selectPipeline(pipelineName);
           this.postMessage({
@@ -492,18 +506,25 @@ class PipelinePanel {
           break;
         }
         case "getSettings": {
+          const settings = await readPRISMSettings(context);
           this.postMessage({
             type: "settings",
-            settings: readPRISMSettings(),
+            settings,
           });
           break;
         }
         case "saveSettings": {
           try {
-            await writePRISMSettings(msg.settings ?? {});
-            const fresh = readPRISMSettings();
+            await writePRISMSettings(context, msg.settings ?? {});
+            const fresh = await readPRISMSettings(context);
             if (typeof fresh.apiKey === "string") {
               this._bridge.updateApiKey(fresh.apiKey || undefined);
+            }
+            if (typeof fresh.piApiKey === "string") {
+              this._bridge.updateBackend(
+                fresh.backend,
+                { piProvider: fresh.piProvider, piModel: fresh.piModel, piApiKey: fresh.piApiKey || undefined },
+              );
             }
             this.postMessage({ type: "settings", settings: fresh });
             vscode.window.showInformationMessage("PRISM settings saved.");
@@ -517,7 +538,7 @@ class PipelinePanel {
         }
         case "verifyCursorSdk": {
           this.postMessage({ type: "verifyCursorSdkStarted" });
-          const result = await runVerifyCursorSdk(this._wsRoot, this._log);
+          const result = await runVerifyCursorSdk(this._wsRoot, this._log, this._context);
           this.postMessage({
             type: "verifyCursorSdkResult",
             result,
@@ -537,7 +558,7 @@ class PipelinePanel {
   }
 }
 
-export function activate(context: vscode.ExtensionContext): void {
+export async function activate(context: vscode.ExtensionContext): Promise<void> {
   const wsRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
   if (!wsRoot) {
     vscode.window.showWarningMessage(
@@ -549,12 +570,22 @@ export function activate(context: vscode.ExtensionContext): void {
   const log = vscode.window.createOutputChannel("PRISM", { log: true });
   context.subscriptions.push(log);
 
+  // --- SecretStorage migration ---
+  // Migrate API keys from settings.json (plain text) to VS Code SecretStorage (encrypted).
+  await migrateApiKeysToSecretStorage(context, log);
+
   const config = vscode.workspace.getConfiguration("PRISM");
-  const apiKey = config.get<string>("apiKey", "");
+
+  // Read API keys from SecretStorage first, fall back to config for migration period
+  const apiKey = (await context.secrets.get("prism.apiKey")) || config.get<string>("apiKey", "") || "";
+  const piApiKey = (await context.secrets.get("prism.piApiKey")) || config.get<string>("piApiKey", "") || "";
+
+  // Read autoApprove from new key, fall back to old key for migration
+  const autoApprove = config.get<boolean>("prism.gates.autoApprove", config.get<boolean>("autoApproveYolo", false));
+
   const backend = config.get<"cursor" | "pi" | "anthropic">("backend", "cursor");
   const piProvider = config.get<string>("piProvider", "anthropic");
   const piModel = config.get<string>("piModel", "claude-sonnet-4-20250514");
-  const piApiKey = config.get<string>("piApiKey", "");
 
   const bridge = new EngineBridge(
     {
@@ -564,6 +595,9 @@ export function activate(context: vscode.ExtensionContext): void {
       piProvider,
       piModel,
       piApiKey: piApiKey || undefined,
+      getSecrets: (key: string) => context.secrets.get(key),
+      storeSecret: (key: string, value: string) => context.secrets.store(key, value),
+      deleteSecret: (key: string) => context.secrets.delete(key),
       onStateUpdate: (state: BridgeState) => {
         panel?.postMessage({ type: "stateUpdate", state });
       },
@@ -617,6 +651,12 @@ export function activate(context: vscode.ExtensionContext): void {
         });
         log.appendLine(`[config] backend updated to: ${backend}`);
       }
+      if (e.affectsConfiguration("prism.gates.autoApprove") ||
+          e.affectsConfiguration("prism.autoApproveYolo")) {
+        log.appendLine(
+          `[config] autoApprove setting changed`,
+        );
+      }
     }),
   );
 
@@ -625,7 +665,7 @@ export function activate(context: vscode.ExtensionContext): void {
       panel.reveal();
       return;
     }
-    panel = new PipelinePanel(bridge, context.extensionUri, log, wsRoot);
+    panel = new PipelinePanel(bridge, context.extensionUri, log, wsRoot, context);
   };
 
   const status = vscode.window.createStatusBarItem(
@@ -687,7 +727,7 @@ export function activate(context: vscode.ExtensionContext): void {
     }),
     vscode.commands.registerCommand("prism.verifyCursorSdk", async () => {
       log.show?.(true);
-      const result = await runVerifyCursorSdk(wsRoot, log);
+      const result = await runVerifyCursorSdk(wsRoot, log, context);
       if (result.status === "ok") {
         vscode.window.showInformationMessage(
           "PRISM: Cursor SDK verified ✓ (composer-2 reachable). See PRISM output for details.",
@@ -717,9 +757,9 @@ interface VerifyCursorSdkResult {
 async function runVerifyCursorSdk(
   wsRoot: string,
   log: vscode.OutputChannel,
+  context: vscode.ExtensionContext,
 ): Promise<VerifyCursorSdkResult> {
-  const cfg = vscode.workspace.getConfiguration("PRISM");
-  const key = cfg.get<string>("apiKey", "");
+  const key = (await context.secrets.get("prism.apiKey")) || "";
   log.appendLine("");
   log.appendLine("=== PRISM: Verify Cursor SDK ===");
   log.appendLine(`[verify] cwd: ${wsRoot}`);
@@ -831,8 +871,51 @@ async function runVerifyCursorSdk(
   }
 }
 
-/** All PRISM settings the panel cares about, read from VS Code workspace config. */
-function readPRISMSettings(): {
+/** Migrate API keys from settings.json (plain text) to VS Code SecretStorage (encrypted). */
+async function migrateApiKeysToSecretStorage(
+  context: vscode.ExtensionContext,
+  log: vscode.LogOutputChannel,
+): Promise<void> {
+  const config = vscode.workspace.getConfiguration("PRISM");
+  const settingsKey = config.get<string>("apiKey", "");
+  const settingsPiKey = config.get<string>("piApiKey", "");
+
+  const secretKey = await context.secrets.get("prism.apiKey");
+  const secretPiKey = await context.secrets.get("prism.piApiKey");
+
+  if (settingsKey && !secretKey) {
+    await context.secrets.store("prism.apiKey", settingsKey);
+    log.appendLine("[secrets] Migrated prism.apiKey from settings.json → SecretStorage");
+    try {
+      await config.update("apiKey", undefined, vscode.ConfigurationTarget.Workspace);
+      await config.update("apiKey", undefined, vscode.ConfigurationTarget.Global);
+    } catch {
+      /* Best-effort cleanup */
+    }
+  }
+
+  if (settingsPiKey && !secretPiKey) {
+    await context.secrets.store("prism.piApiKey", settingsPiKey);
+    log.appendLine("[secrets] Migrated prism.piApiKey from settings.json → SecretStorage");
+    try {
+      await config.update("piApiKey", undefined, vscode.ConfigurationTarget.Workspace);
+      await config.update("piApiKey", undefined, vscode.ConfigurationTarget.Global);
+    } catch {
+      /* Best-effort cleanup */
+    }
+  }
+
+  // Migrate autoApproveYolo → gates.autoApprove
+  const oldAutoApprove = config.get<boolean>("autoApproveYolo", false);
+  const newAutoApprove = config.inspect<boolean>("prism.gates.autoApprove");
+  if (oldAutoApprove && newAutoApprove?.workspaceValue === undefined && newAutoApprove?.globalValue === undefined) {
+    await config.update("prism.gates.autoApprove", true, vscode.ConfigurationTarget.Workspace);
+    log.appendLine("[secrets] Migrated autoApproveYolo → prism.gates.autoApprove");
+  }
+}
+
+/** All PRISM settings the panel cares about, read from VS Code workspace config + SecretStorage. */
+async function readPRISMSettings(context: vscode.ExtensionContext): Promise<{
   apiKey: string;
   backend: "cursor" | "pi" | "anthropic";
   piProvider: string;
@@ -842,50 +925,74 @@ function readPRISMSettings(): {
   modelOverride: string;
   maxTokens: number;
   autoApproveYolo: boolean;
+  gatesAutoApprove: boolean;
   gitignoreArtifacts: boolean;
   gateTimeout: number;
   commandConfirmation: boolean;
-} {
+}> {
   const cfg = vscode.workspace.getConfiguration("PRISM");
+  const apiKey = (await context.secrets.get("prism.apiKey")) || "";
+  const piApiKey = (await context.secrets.get("prism.piApiKey")) || "";
   return {
-    apiKey: cfg.get<string>("apiKey", "") ?? "",
+    apiKey,
     backend: cfg.get<"cursor" | "pi" | "anthropic">("backend", "cursor") ?? "cursor",
     piProvider: cfg.get<string>("piProvider", "anthropic") ?? "anthropic",
     piModel: cfg.get<string>("piModel", "claude-sonnet-4-20250514") ?? "claude-sonnet-4-20250514",
-    piApiKey: cfg.get<string>("piApiKey", "") ?? "",
+    piApiKey,
     model: cfg.get<string>("model", "claude-sonnet-4-20250514") ?? "",
     modelOverride: cfg.get<string>("modelOverride", "") ?? "",
     maxTokens: cfg.get<number>("maxTokens", 8192) ?? 8192,
     autoApproveYolo: cfg.get<boolean>("autoApproveYolo", false) ?? false,
-    gitignoreArtifacts:
-      cfg.get<boolean>("gitignoreArtifacts", false) ?? false,
+    gatesAutoApprove: cfg.get<boolean>("prism.gates.autoApprove", false) ?? false,
+    gitignoreArtifacts: cfg.get<boolean>("gitignoreArtifacts", false) ?? false,
     gateTimeout: cfg.get<number>("gateTimeout", 0) ?? 0,
-    commandConfirmation:
-      cfg.get<boolean>("commandConfirmation", true) ?? true,
+    commandConfirmation: cfg.get<boolean>("commandConfirmation", true) ?? true,
   };
 }
 
 /**
- * Persist a partial settings update. Workspace target when a workspace is open;
- * otherwise falls back to Global so the panel works in single-file scenarios too.
+ * Persist a partial settings update. API keys go to SecretStorage;
+ * other settings go to workspace config.
  */
 async function writePRISMSettings(
+  context: vscode.ExtensionContext,
   next: Record<string, unknown>,
 ): Promise<void> {
   const cfg = vscode.workspace.getConfiguration("PRISM");
   const target = vscode.workspace.workspaceFolders?.length
     ? vscode.ConfigurationTarget.Workspace
     : vscode.ConfigurationTarget.Global;
+
+  // API keys → SecretStorage
+  if ("apiKey" in next && typeof next.apiKey === "string") {
+    if (next.apiKey) {
+      await context.secrets.store("prism.apiKey", next.apiKey);
+    } else {
+      await context.secrets.delete("prism.apiKey");
+    }
+  }
+  if ("piApiKey" in next && typeof next.piApiKey === "string") {
+    if (next.piApiKey) {
+      await context.secrets.store("prism.piApiKey", next.piApiKey);
+    } else {
+      await context.secrets.delete("prism.piApiKey");
+    }
+  }
+
+  // Map legacy autoApproveYolo → gates.autoApprove for backward compat
+  if ("autoApproveYolo" in next) {
+    (next as any)["prism.gates.autoApprove"] = next.autoApproveYolo;
+  }
+
   const allowed: Record<string, "string" | "number" | "boolean"> = {
-    apiKey: "string",
     backend: "string",
     piProvider: "string",
     piModel: "string",
-    piApiKey: "string",
     model: "string",
     modelOverride: "string",
     maxTokens: "number",
     autoApproveYolo: "boolean",
+    "prism.gates.autoApprove": "boolean",
     gitignoreArtifacts: "boolean",
     gateTimeout: "number",
     commandConfirmation: "boolean",
@@ -918,62 +1025,65 @@ function showSettings(context: vscode.ExtensionContext): void {
     { enableScripts: true, retainContextWhenHidden: true },
   );
 
-  const config = vscode.workspace.getConfiguration("PRISM");
-  const apiKey = config.get("apiKey", "") as string;
-  const model = config.get("model", "claude-sonnet-4-20250514") as string;
-  const modelOverride = config.get("modelOverride", "") as string;
-  const maxTokens = config.get("maxTokens", 8192) as number;
-  const autoApprove = config.get("autoApproveYolo", false) as boolean;
+  (async () => {
+    const config = vscode.workspace.getConfiguration("PRISM");
+    const apiKey = (await context.secrets.get("prism.apiKey")) || "";
+    const model = config.get("model", "claude-sonnet-4-20250514") as string;
+    const modelOverride = config.get("modelOverride", "") as string;
+    const maxTokens = config.get("maxTokens", 8192) as number;
+    const autoApprove = config.get<boolean>("prism.gates.autoApprove", config.get<boolean>("autoApproveYolo", false));
 
-  settingsPanel.webview.html = getSettingsHtml(
-    apiKey,
-    model,
-    modelOverride,
-    maxTokens,
-    autoApprove,
-  );
+    settingsPanel!.webview.html = getSettingsHtml(
+      apiKey,
+      model,
+      modelOverride,
+      maxTokens,
+      autoApprove,
+    );
 
-  settingsPanel.webview.onDidReceiveMessage(
-    async (msg) => {
-      if (msg?.type !== "save") return;
-      await config.update(
-        "apiKey",
-        msg.apiKey,
-        vscode.ConfigurationTarget.Workspace,
-      );
-      await config.update(
-        "model",
-        msg.model,
-        vscode.ConfigurationTarget.Workspace,
-      );
-      await config.update(
-        "modelOverride",
-        msg.modelOverride,
-        vscode.ConfigurationTarget.Workspace,
-      );
-      await config.update(
-        "maxTokens",
-        msg.maxTokens,
-        vscode.ConfigurationTarget.Workspace,
-      );
-      await config.update(
-        "autoApproveYolo",
-        msg.autoApprove,
-        vscode.ConfigurationTarget.Workspace,
-      );
-      settingsPanel?.webview.postMessage({ type: "saved" });
-    },
-    undefined,
-    context.subscriptions,
-  );
+    settingsPanel!.webview.onDidReceiveMessage(
+      async (msg) => {
+        if (msg?.type !== "save") return;
+        // API keys → SecretStorage
+        if (msg.apiKey) {
+          await context.secrets.store("prism.apiKey", msg.apiKey);
+        } else {
+          await context.secrets.delete("prism.apiKey");
+        }
+        await config.update(
+          "model",
+          msg.model,
+          vscode.ConfigurationTarget.Workspace,
+        );
+        await config.update(
+          "modelOverride",
+          msg.modelOverride,
+          vscode.ConfigurationTarget.Workspace,
+        );
+        await config.update(
+          "maxTokens",
+          msg.maxTokens,
+          vscode.ConfigurationTarget.Workspace,
+        );
+        await config.update(
+          "prism.gates.autoApprove",
+          msg.autoApprove,
+          vscode.ConfigurationTarget.Workspace,
+        );
+        settingsPanel?.webview.postMessage({ type: "saved" });
+      },
+      undefined,
+      context.subscriptions,
+    );
 
-  settingsPanel.onDidDispose(
-    () => {
-      settingsPanel = undefined;
-    },
-    null,
-    context.subscriptions,
-  );
+    settingsPanel!.onDidDispose(
+      () => {
+        settingsPanel = undefined;
+      },
+      null,
+      context.subscriptions,
+    );
+  })();
 }
 
 function getSettingsHtml(
