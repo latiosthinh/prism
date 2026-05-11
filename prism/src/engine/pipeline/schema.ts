@@ -49,6 +49,8 @@ export const StepDefinitionSchema = z.object({
   model: z.string().default("composer-2"),
   gate: z.boolean().default(true),
   maxRetries: z.number().int().min(0).max(10).default(3),
+  retryDelayMs: z.number().int().min(0).max(60000).default(0),
+  retryBackoffMultiplier: z.number().min(1).max(10).default(2),
   artifact: z.string(),
   depends_on: z.array(z.string()).default([]),
   loop: LoopConfigSchema.optional(),

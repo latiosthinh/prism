@@ -291,11 +291,18 @@ export class LoopOrchestrator {
         stepState.error = errMsg;
         if (stepState.retriesRemaining > 0) {
           stepState.retriesRemaining--;
+          const attempt = stepDef.maxRetries - stepState.retriesRemaining;
+          const delayMs = stepDef.retryDelayMs > 0
+            ? stepDef.retryDelayMs * Math.pow(stepDef.retryBackoffMultiplier ?? 2, attempt - 1)
+            : 0;
           event(
             "progress",
             stepId,
-            `Retrying (${stepState.retriesRemaining} retries left)...`,
+            `Retrying in ${delayMs}ms (${stepState.retriesRemaining} retries left)...`,
           );
+          if (delayMs > 0) {
+            await this.sleep(delayMs);
+          }
           continue;
         }
         decision(
@@ -363,11 +370,18 @@ export class LoopOrchestrator {
 
       if (review.verdict === "fail" && stepState.retriesRemaining > 0) {
         stepState.retriesRemaining--;
+        const attempt = stepDef.maxRetries - stepState.retriesRemaining;
+        const delayMs = stepDef.retryDelayMs > 0
+          ? stepDef.retryDelayMs * Math.pow(stepDef.retryBackoffMultiplier ?? 2, attempt - 1)
+          : 0;
         event(
           "progress",
           stepId,
-          `Auto-review failed; retrying (${stepState.retriesRemaining} left)`,
+          `Auto-review failed; retrying in ${delayMs}ms (${stepState.retriesRemaining} left)`,
         );
+        if (delayMs > 0) {
+          await this.sleep(delayMs);
+        }
         continue;
       }
 
@@ -584,5 +598,9 @@ export class LoopOrchestrator {
       if (group.steps.includes(stepId)) return group;
     }
     return null;
+  }
+
+  private sleep(ms: number): Promise<void> {
+    return new Promise((resolve) => setTimeout(resolve, ms));
   }
 }
