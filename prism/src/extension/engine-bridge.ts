@@ -30,6 +30,7 @@ import {
 import { RunStore } from "../engine/runner/cascade-reject.js";
 import { LoopOrchestrator } from "../engine/orchestrator/loop-orchestrator.js";
 import { StateMachine } from "../engine/orchestrator/state-machine.js";
+import { PipelineValidator } from "../engine/pipeline/validator.js";
 
 export interface AgentStatus {
   stepId: string;
@@ -799,26 +800,111 @@ export class EngineBridge {
   }
 
   runDryRun(pipelineName: string): void {
+    const lines: string[] = [];
+    const emit = (content: string): void => {
+      lines.push(content);
+      const ev: AgentEvent = {
+        type: "progress",
+        stepId: "dry-run",
+        content,
+        timestamp: new Date().toISOString(),
+      };
+      this._onAgentEvent(ev);
+    };
+
     let pipeline: PipelineDefinition;
     try {
       pipeline = this._loader.loadPipeline(pipelineName);
     } catch (err: any) {
-      this._onError(`Dry-run: ${err?.message ?? err}`);
+      emit(`✗ Failed to load pipeline: ${err?.message ?? err}`);
       return;
     }
+
+    emit(`\n═══ Dry-Run: "${pipeline.name}" ═══\n`);
+
+    // 1. Schema validation
+    const dryValidator = new PipelineValidator();
+    const issues = dryValidator.validate(pipeline);
+    const errors = issues.filter((i) => i.type === "error");
+    const warnings = issues.filter((i) => i.type === "warning");
+    if (errors.length > 0) {
+      for (const e of errors) {
+        emit(`✗ ERROR: ${e.message}`);
+      }
+    }
+    if (warnings.length > 0) {
+      for (const w of warnings) {
+        emit(`⚠ WARNING: ${w.message}`);
+      }
+    }
+    if (errors.length === 0 && warnings.length === 0) {
+      emit("✓ Schema validation passed");
+    }
+
+    // 2. Dependency resolution
+    try {
+      const order = dryValidator.topologicalSort(pipeline);
+      emit(`✓ Topological sort OK (${order.length} steps)`);
+      emit(`  Execution order: ${order.join(" → ")}`);
+    } catch (err: any) {
+      emit(`✗ Topological sort failed: ${err?.message ?? err}`);
+      return;
+    }
+
+    // 3. Agent existence check
+    for (const step of pipeline.steps) {
+      try {
+        this._registry.load(step.agent);
+      } catch {
+        emit(`⚠ Step "${step.id}" references unregistered agent '${step.agent}'`);
+      }
+    }
+
+    // 4. Skill existence check
+    for (const step of pipeline.steps) {
+      for (const skillId of step.skills) {
+        try {
+          this._skillLoader.load(skillId);
+        } catch {
+          emit(`⚠ Step "${step.id}" references missing skill '${skillId}'`);
+        }
+      }
+    }
+
+    // 5. Provider/model validation
+    const validProviders = ["cursor", "pi", "anthropic"];
+    const provider = pipeline.execution?.provider ?? "cursor";
+    if (!validProviders.includes(provider)) {
+      emit(`⚠ Unknown provider: ${provider}`);
+    }
+
+    // 6. Parallel groups
+    try {
+      const groups = dryValidator.findParallelGroups(pipeline);
+      const parallelCount = groups.filter((g) => g.length > 1).length;
+      if (parallelCount > 0) {
+        emit(`✓ ${parallelCount} parallel execution group(s) detected`);
+      }
+    } catch {
+      /* findParallelGroups isn't critical */
+    }
+
+    // 7. Summary
+    const totalTokens = pipeline.steps.length * 8192;
     const tokenEstimate = pipeline.steps.length * 500;
-    const summary =
-      `Dry-run "${pipeline.name}":\n` +
-      `  - steps: ${pipeline.steps.length}\n` +
-      `  - estimated tokens: ~${tokenEstimate}\n` +
-      `  - agents: ${pipeline.agents.length}\n` +
-      `  - loop_groups: ${pipeline.loop_groups.length}`;
-    const ev: AgentEvent = {
-      type: "progress",
-      stepId: "dry-run",
-      content: summary,
-      timestamp: new Date().toISOString(),
-    };
-    this._onAgentEvent(ev);
+
+    emit(`\n─── Summary ───`);
+    emit(`  Steps:       ${pipeline.steps.length}`);
+    emit(`  Agents:      ${pipeline.agents.length}`);
+    emit(`  Loop groups: ${pipeline.loop_groups.length}`);
+    emit(`  Max tokens:  ${totalTokens.toLocaleString()} (all steps combined)`);
+    emit(`  Est. usage:  ~${tokenEstimate.toLocaleString()} tokens`);
+    emit(`  Gate steps:  ${pipeline.steps.filter((s) => s.gate).length}`);
+
+    if (errors.length > 0) {
+      emit(`\n✗ Dry-run found ${errors.length} error(s) — fix before running.`);
+    } else {
+      emit(`\n✓ Dry-run passed — pipeline is valid.\n`);
+    }
   }
 }
