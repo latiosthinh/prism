@@ -56,6 +56,15 @@ export const StepDefinitionSchema = z.object({
   loop: LoopConfigSchema.optional(),
   tags: z.array(z.string()).default([]),
   skills: z.array(z.string()).default([]),
+  condition: z.string().optional(),
+  outputSchema: z
+    .object({
+      requiredSections: z.array(z.string()).default([]),
+      format: z.enum(["markdown", "json", "text"]).default("markdown"),
+    })
+    .optional(),
+  mcp_servers: z.array(z.string()).default([]),
+  context_files: z.array(z.string()).default([]),
 });
 export type StepDefinition = z.infer<typeof StepDefinitionSchema>;
 

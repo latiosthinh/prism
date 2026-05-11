@@ -3,7 +3,7 @@
   "displayName": "PRISM Pipeline",
   "description": "Multi-provider AI development orchestration — structured pipelines with 30+ AI providers",
   "version": "1.0.0",
-  "publisher": "prism",
+  "publisher": "latiosthinh",
   "license": "MIT",
   "engines": {
     "vscode": "^1.85.0"
@@ -90,17 +90,15 @@
       {
         "command": "prism.init",
         "title": "PRISM: Initialize Pipeline Project"
+      },
+      {
+        "command": "prism.setApiKey",
+        "title": "PRISM: Set API Key (SecretStorage)"
       }
     ],
     "configuration": {
       "title": "PRISM",
       "properties": {
-        "prism.apiKey": {
-          "type": "string",
-          "description": "Cursor API key for the Cursor SDK runner. Get one at cursor.com → Account → API Keys.",
-          "default": "",
-          "deprecationMessage": "⬆️ API keys are now stored in VS Code SecretStorage. Use PRISM Settings to manage your keys securely."
-        },
         "prism.backend": {
           "type": "string",
           "description": "AI backend to use for pipeline steps",
@@ -125,12 +123,6 @@
           "type": "string",
           "description": "Model to use with PRISM SDK",
           "default": "claude-sonnet-4-20250514"
-        },
-        "prism.piApiKey": {
-          "type": "string",
-          "description": "API key for PRISM SDK backend.",
-          "default": "",
-          "deprecationMessage": "⬆️ API keys are now stored in VS Code SecretStorage. Use PRISM Settings to manage your keys securely."
         },
         "prism.model": {
           "type": "string",

@@ -27,3 +27,9 @@ export type {
   AgentMessage,
   AgentState,
 } from '@earendil-works/pi-agent-core';
+
+export { buildCodebaseContext } from './context-builder.js';
+export type { FileContext, CodebaseContext } from './context-builder.js';
+
+export { McpClientManager, parseMcpServersFromPipeline } from './mcp-client.js';
+export type { McpServerConfig, McpTool, McpResource, McpToolCallResult } from './mcp-client.js';

@@ -509,7 +509,7 @@ class PipelinePanel {
           break;
         }
         case "getSettings": {
-          const settings = await readPRISMSettings(context);
+          const settings = await readPRISMSettings(this._context);
           this.postMessage({
             type: "settings",
             settings,
@@ -518,8 +518,8 @@ class PipelinePanel {
         }
         case "saveSettings": {
           try {
-            await writePRISMSettings(context, msg.settings ?? {});
-            const fresh = await readPRISMSettings(context);
+            await writePRISMSettings(this._context, msg.settings ?? {});
+            const fresh = await readPRISMSettings(this._context);
             if (typeof fresh.apiKey === "string") {
               this._bridge.updateApiKey(fresh.apiKey || undefined);
             }
@@ -601,9 +601,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       piModel,
       piApiKey: piApiKey || undefined,
       allowedCommands,
-      getSecrets: (key: string) => context.secrets.get(key),
-      storeSecret: (key: string, value: string) => context.secrets.store(key, value),
-      deleteSecret: (key: string) => context.secrets.delete(key),
+      getSecrets: async (key: string) => await context.secrets.get(key),
+      storeSecret: async (key: string, value: string) => { await context.secrets.store(key, value); },
+      deleteSecret: async (key: string) => { await context.secrets.delete(key); },
       onStateUpdate: (state: BridgeState) => {
         panel?.postMessage({ type: "stateUpdate", state });
       },

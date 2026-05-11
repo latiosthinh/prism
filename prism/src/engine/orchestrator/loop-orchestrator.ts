@@ -4,6 +4,7 @@ import { v4 as uuidv4 } from "uuid";
 import {
   PipelineDefinition,
   PipelineRunState,
+  StepRunState,
   Decision,
   LoopGroup,
   TaskItem,
@@ -18,6 +19,7 @@ import { StepRunner, RunnerOptions } from "../runner/step-runner.js";
 import { AgentRegistry } from "../agents/registry.js";
 import { PipelineValidator } from "../pipeline/validator.js";
 import { SkillLoader } from "../artifacts/skill-loader.js";
+import { evaluateCondition } from "../pipeline/conditions.js";
 
 export interface OrchestratorConfig {
   cwd: string;
@@ -27,6 +29,14 @@ export interface OrchestratorConfig {
   onDecision: (d: Decision) => void;
   waitForGate: (stepId: string) => Promise<void>;
   signal?: AbortSignal;
+}
+
+interface StepExecutionResult {
+  stepId: string;
+  success: boolean;
+  error?: string;
+  needsGate: boolean;
+  gateApproved?: boolean;
 }
 
 export class LoopOrchestrator {
@@ -108,6 +118,404 @@ export class LoopOrchestrator {
       return;
     }
 
+    const isParallel = pipeline.execution?.mode === "parallel";
+
+    if (isParallel) {
+      await this.runParallel(
+        pipeline,
+        run,
+        { cwd, runner, agentRegistry, onEvent, onDecision, waitForGate, signal },
+        decision,
+        event,
+        resumeFromStep,
+      );
+    } else {
+      await this.runSequential(
+        pipeline,
+        run,
+        { cwd, runner, agentRegistry, onEvent, onDecision, waitForGate, signal },
+        decision,
+        event,
+        resumeFromStep,
+      );
+    }
+
+    const order = this.getOrder(pipeline);
+    if (this.machine.allStepsComplete(run, order)) {
+      this.machine.setRunStatus(run, "completed");
+      decision("run_completed", `Pipeline "${pipeline.name}" completed`);
+    } else {
+      this.machine.setRunStatus(run, "paused");
+      decision("run_paused", `Pipeline "${pipeline.name}" paused`);
+    }
+  }
+
+  private getOrder(pipeline: PipelineDefinition): string[] {
+    try {
+      return this.validator.topologicalSort(pipeline);
+    } catch {
+      return pipeline.steps.map((s) => s.id);
+    }
+  }
+
+  private async runParallel(
+    pipeline: PipelineDefinition,
+    run: PipelineRunState,
+    config: OrchestratorConfig,
+    decision: (type: Decision["type"], summary: string, detail?: string, stepId?: string) => void,
+    event: (type: AgentEvent["type"], stepId: string, content: string, meta?: Record<string, unknown>) => void,
+    resumeFromStep?: string,
+  ): Promise<void> {
+    const { signal } = config;
+    const groups = this.validator.findParallelGroups(pipeline);
+
+    let resumeGroupIdx = 0;
+    if (resumeFromStep) {
+      for (let g = 0; g < groups.length; g++) {
+        if (groups[g].includes(resumeFromStep)) {
+          resumeGroupIdx = g;
+          for (let j = 0; j < g; j++) {
+            for (const sid of groups[j]) {
+              const s = run.steps[sid];
+              if (s && !this.machine.isStepComplete(s.status)) {
+                s.status = "resumed";
+              }
+            }
+          }
+          break;
+        }
+      }
+    }
+
+    for (let g = resumeGroupIdx; g < groups.length; g++) {
+      if (signal?.aborted) {
+        this.machine.setRunStatus(run, "cancelled");
+        decision("run_cancelled", "Pipeline cancelled by user");
+        return;
+      }
+
+      const group = groups[g].filter((sid) => {
+        const s = run.steps[sid];
+        return s && !this.machine.isStepComplete(s.status);
+      });
+
+      if (group.length === 0) continue;
+
+      const skippedByCondition = groups[g].filter((sid) => {
+        const stepDef = pipeline.steps.find((s) => s.id === sid);
+        if (!stepDef?.condition) return false;
+        const shouldRun = evaluateCondition(stepDef.condition, run);
+        return !shouldRun;
+      });
+
+      for (const sid of skippedByCondition) {
+        const s = run.steps[sid];
+        if (s && s.status === "pending") {
+          this.machine.transitionStep(run, sid, "skipped");
+          decision("step_skipped", `Step "${sid}" skipped by condition`, undefined, sid);
+        }
+      }
+
+      const executableSteps = group.filter((sid) => {
+        const stepDef = pipeline.steps.find((s) => s.id === sid);
+        if (!stepDef?.condition) return true;
+        return evaluateCondition(stepDef.condition, run);
+      });
+
+      if (executableSteps.length === 0) continue;
+
+      decision(
+        "user_note",
+        `Executing parallel group ${g + 1}/${groups.length} (${executableSteps.length} steps)`,
+      );
+
+      const results = await this.executeParallelGroup(
+        executableSteps,
+        pipeline,
+        run,
+        config,
+        decision,
+        event,
+      );
+
+      const failedStep = results.find((r) => !r.success);
+      if (failedStep) {
+        const stepDef = pipeline.steps.find((s) => s.id === failedStep.stepId);
+        decision(
+          "step_rejected",
+          `Step "${stepDef?.name ?? failedStep.stepId}" failed in parallel group`,
+          failedStep.error,
+          failedStep.stepId,
+        );
+        this.machine.setRunStatus(run, "failed");
+        decision("run_failed", `Pipeline failed at step "${failedStep.stepId}"`);
+        return;
+      }
+    }
+  }
+
+  private async executeParallelGroup(
+    stepIds: string[],
+    pipeline: PipelineDefinition,
+    run: PipelineRunState,
+    config: OrchestratorConfig,
+    decision: (type: Decision["type"], summary: string, detail?: string, stepId?: string) => void,
+    event: (type: AgentEvent["type"], stepId: string, content: string, meta?: Record<string, unknown>) => void,
+  ): Promise<StepExecutionResult[]> {
+    const { waitForGate } = config;
+
+    const promises = stepIds.map(async (stepId): Promise<StepExecutionResult> => {
+      const stepDef = pipeline.steps.find((s) => s.id === stepId);
+      const stepState = run.steps[stepId];
+      if (!stepDef || !stepState) {
+        return { stepId, success: true, needsGate: false };
+      }
+
+      if (this.machine.isStepComplete(stepState.status)) {
+        return { stepId, success: true, needsGate: false };
+      }
+
+      if (stepState.status === "rejected") {
+        stepState.retriesRemaining = stepDef.maxRetries;
+        this.machine.transitionStep(run, stepId, "running");
+      } else if (stepState.status === "pending") {
+        stepState.revision++;
+        this.machine.transitionStep(run, stepId, "running");
+      }
+
+      return this.executeSingleStep(
+        stepId,
+        stepDef,
+        stepState,
+        pipeline,
+        run,
+        config,
+        decision,
+        event,
+      );
+    });
+
+    const results = await Promise.all(promises);
+
+    const gateSteps = results.filter((r) => r.needsGate);
+    if (gateSteps.length > 0) {
+      await Promise.all(
+        gateSteps.map(async (r) => {
+          await waitForGate(r.stepId);
+          const stepState = run.steps[r.stepId];
+          r.gateApproved = stepState.status === "approved";
+        }),
+      );
+    }
+
+    return results;
+  }
+
+  private async executeSingleStep(
+    stepId: string,
+    stepDef: NonNullable<ReturnType<PipelineDefinition["steps"]["find"]>>,
+    stepState: StepRunState,
+    pipeline: PipelineDefinition,
+    run: PipelineRunState,
+    config: OrchestratorConfig,
+    decision: (type: Decision["type"], summary: string, detail?: string, stepId?: string) => void,
+    event: (type: AgentEvent["type"], stepId: string, content: string, meta?: Record<string, unknown>) => void,
+  ): Promise<StepExecutionResult> {
+    const { cwd, runner, agentRegistry, onEvent, signal } = config;
+
+    try {
+      const skillsContext =
+        stepDef.skills && stepDef.skills.length > 0 && this.skillLoader
+          ? this.skillLoader.buildContextForAgent(
+              stepDef.skills,
+              stepDef.agent,
+            )
+          : "";
+
+      const agentRecord = agentRegistry.load(stepDef.agent);
+      const systemPrompt = agentRecord?.systemPrompt ?? "";
+
+      const artifacts: Record<string, ArtifactData> = {
+        "system-prompt": { frontmatter: {}, body: systemPrompt },
+      };
+      const idea = run.idea;
+
+      for (const prevStep of pipeline.steps) {
+        if (prevStep.id === stepDef.id) break;
+        const prevState = run.steps[prevStep.id];
+        if (!prevState) continue;
+        const artifactPath = path.join(
+          cwd,
+          ".PRISM",
+          "runs",
+          run.runId,
+          "steps",
+          prevStep.id,
+          "latest.md",
+        );
+        try {
+          if (fs.existsSync(artifactPath)) {
+            const content = fs.readFileSync(artifactPath, "utf8");
+            artifacts[prevStep.artifact || prevStep.id] = {
+              frontmatter: {},
+              body: content,
+            };
+          }
+        } catch {
+          /* ignore missing artifact */
+        }
+      }
+
+      const result = await runner.run(
+        stepDef,
+        {
+          cwd,
+          model: stepDef.model,
+          idea,
+          artifacts,
+          skillsContext,
+        },
+        { cwd, onEvent, signal },
+      );
+
+      const artifactDir = path.join(
+        cwd,
+        ".PRISM",
+        "runs",
+        run.runId,
+        "steps",
+        stepDef.id,
+      );
+      try {
+        fs.mkdirSync(artifactDir, { recursive: true });
+        fs.writeFileSync(path.join(artifactDir, "latest.md"), result, "utf8");
+        const archiveDir = path.join(artifactDir, "archive");
+        fs.mkdirSync(archiveDir, { recursive: true });
+        fs.writeFileSync(
+          path.join(archiveDir, `rev-${stepState.revision}.md`),
+          result,
+          "utf8",
+        );
+        stepState.outputArtifact = path
+          .join(".PRISM", "runs", run.runId, "steps", stepDef.id, "latest.md")
+          .replace(/\\/g, "/");
+        stepState.artifactPath = stepState.outputArtifact;
+      } catch (err: any) {
+        event(
+          "error",
+          stepId,
+          `Failed to write artifact: ${err?.message ?? err}`,
+        );
+      }
+
+      const review = await this.reviewer.review(
+        stepId,
+        stepState,
+        result,
+        undefined,
+        undefined,
+        stepDef.tags,
+        stepDef.outputSchema,
+      );
+      stepState.reviews.push(review);
+
+      const reviewSummary =
+        (review.metadata?.summary as string | undefined) ??
+        review.reasons.join("; ");
+      const reviewDetail =
+        review.reasons.length > 0 ? review.reasons.join("\n") : undefined;
+      decision(
+        review.verdict === "pass" ? "auto_review_pass" : "auto_review_fail",
+        reviewSummary || `Auto review: ${review.verdict}`,
+        reviewDetail,
+        stepId,
+      );
+
+      if (review.verdict === "fail" && stepState.retriesRemaining > 0) {
+        stepState.retriesRemaining--;
+        const attempt = stepDef.maxRetries - stepState.retriesRemaining;
+        const delayMs = stepDef.retryDelayMs > 0
+          ? stepDef.retryDelayMs * Math.pow(stepDef.retryBackoffMultiplier ?? 2, attempt - 1)
+          : 0;
+        event(
+          "progress",
+          stepId,
+          `Auto-review failed; retrying in ${delayMs}ms (${stepState.retriesRemaining} left)`,
+        );
+        if (delayMs > 0) {
+          await this.sleep(delayMs);
+        }
+        return this.executeSingleStep(stepId, stepDef, stepState, pipeline, run, config, decision, event);
+      }
+
+      if (review.verdict !== "pass") {
+        this.machine.transitionStep(run, stepId, "failed");
+        return { stepId, success: false, error: review.reasons.join("; "), needsGate: false };
+      }
+
+      if (stepDef.gate) {
+        this.machine.transitionStep(run, stepId, "in_review");
+        event("progress", stepId, "Awaiting human review...");
+        decision(
+          "user_note",
+          `Step "${stepDef.name}" awaiting human approval`,
+          undefined,
+          stepId,
+        );
+        return { stepId, success: true, needsGate: true };
+      } else {
+        this.machine.transitionStep(run, stepId, "approved");
+        return { stepId, success: true, needsGate: false };
+      }
+    } catch (err: any) {
+      const errMsg = err?.message ?? String(err);
+      event("error", stepId, `Runner failed: ${errMsg}`);
+      decision(
+        "step_failed",
+        `Step "${stepDef.name}" runner error: ${errMsg}`,
+        undefined,
+        stepId,
+      );
+      this.machine.transitionStep(run, stepId, "failed");
+      stepState.error = errMsg;
+      if (stepState.retriesRemaining > 0) {
+        stepState.retriesRemaining--;
+        const attempt = stepDef.maxRetries - stepState.retriesRemaining;
+        const delayMs = stepDef.retryDelayMs > 0
+          ? stepDef.retryDelayMs * Math.pow(stepDef.retryBackoffMultiplier ?? 2, attempt - 1)
+          : 0;
+        event(
+          "progress",
+          stepId,
+          `Retrying in ${delayMs}ms (${stepState.retriesRemaining} retries left)...`,
+        );
+        if (delayMs > 0) {
+          await this.sleep(delayMs);
+        }
+        return this.executeSingleStep(stepId, stepDef, stepState, pipeline, run, config, decision, event);
+      }
+      return { stepId, success: false, error: errMsg, needsGate: false };
+    }
+  }
+
+  private async runSequential(
+    pipeline: PipelineDefinition,
+    run: PipelineRunState,
+    config: OrchestratorConfig,
+    decision: (type: Decision["type"], summary: string, detail?: string, stepId?: string) => void,
+    event: (type: AgentEvent["type"], stepId: string, content: string, meta?: Record<string, unknown>) => void,
+    resumeFromStep?: string,
+  ): Promise<void> {
+    const {
+      cwd,
+      runner,
+      agentRegistry,
+      onEvent,
+      onDecision,
+      waitForGate,
+      signal,
+    } = config;
+
     let order: string[];
     try {
       order = this.validator.topologicalSort(pipeline);
@@ -128,7 +536,6 @@ export class LoopOrchestrator {
       const idx = order.indexOf(resumeFromStep);
       if (idx >= 0) {
         resumeIdx = idx;
-        // Mark all steps before resume point as "resumed" if not already complete
         for (let j = 0; j < resumeIdx; j++) {
           const sid = order[j];
           const s = run.steps[sid];
@@ -168,6 +575,16 @@ export class LoopOrchestrator {
         continue;
       }
 
+      if (stepDef.condition) {
+        const shouldRun = evaluateCondition(stepDef.condition, run);
+        if (!shouldRun) {
+          this.machine.transitionStep(run, stepId, "skipped");
+          decision("step_skipped", `Step "${stepDef.name}" skipped by condition`, undefined, stepId);
+          i++;
+          continue;
+        }
+      }
+
       if (stepState.status === "rejected") {
         stepState.retriesRemaining = stepDef.maxRetries;
         this.machine.transitionStep(run, stepId, "running");
@@ -176,7 +593,6 @@ export class LoopOrchestrator {
         this.machine.transitionStep(run, stepId, "running");
       }
 
-      // Task loop
       if (stepDef.loop?.mode === "task") {
         const tasks = this.parseTasks(run);
         if (tasks.length > 0) {
@@ -222,7 +638,6 @@ export class LoopOrchestrator {
         }
       }
 
-      // Normal execution
       const skillsContext =
         stepDef.skills && stepDef.skills.length > 0 && this.skillLoader
           ? this.skillLoader.buildContextForAgent(
@@ -353,6 +768,7 @@ export class LoopOrchestrator {
         undefined,
         undefined,
         stepDef.tags,
+        stepDef.outputSchema,
       );
       stepState.reviews.push(review);
 
@@ -385,7 +801,6 @@ export class LoopOrchestrator {
         continue;
       }
 
-      // Phase loop
       if (review.verdict !== "pass" && stepDef.loop?.mode === "phase") {
         const prevStepId = order[Math.max(0, i - 1)];
         if (
@@ -417,7 +832,6 @@ export class LoopOrchestrator {
         }
       }
 
-      // Cascade verdict
       if (review.verdict === "cascade") {
         const target =
           stepDef.loop?.target ?? (i > 0 ? order[i - 1] : order[0]);
@@ -473,7 +887,6 @@ export class LoopOrchestrator {
         return;
       }
 
-      // Loop groups
       const group = this.findLoopGroupForStep(stepId, pipeline);
       if (group) {
         const lastStepId = group.steps[group.steps.length - 1];
@@ -522,14 +935,6 @@ export class LoopOrchestrator {
       }
 
       i++;
-    }
-
-    if (this.machine.allStepsComplete(run, order)) {
-      this.machine.setRunStatus(run, "completed");
-      decision("run_completed", `Pipeline "${pipeline.name}" completed`);
-    } else {
-      this.machine.setRunStatus(run, "paused");
-      decision("run_paused", `Pipeline "${pipeline.name}" paused`);
     }
   }
 

@@ -38,6 +38,11 @@ export interface CustomValidator {
   ) => Promise<ValidatorResult>;
 }
 
+export interface OutputSchema {
+  requiredSections: string[];
+  format: "markdown" | "json" | "text";
+}
+
 const IMPLEMENTATION_TAGS = new Set([
   "code",
   "build",
@@ -72,6 +77,7 @@ export class AutoReviewer {
     customChecks?: StructuralCheck[],
     customValidators?: CustomValidator[],
     stepTags?: string[],
+    outputSchema?: OutputSchema,
   ): Promise<ReviewResult> {
     const isImpl = (stepTags ?? []).some((t) =>
       IMPLEMENTATION_TAGS.has(t.toLowerCase()),
@@ -86,6 +92,10 @@ export class AutoReviewer {
       message: c.failMessage,
     }));
     const structuralPass = structuralResults.every((r) => r.pass);
+
+    const schemaResults = outputSchema
+      ? this.validateOutputSchema(output, outputSchema)
+      : { pass: true, reasons: [] };
 
     const semanticDetails: string[] = [];
 
@@ -138,7 +148,10 @@ export class AutoReviewer {
       }
     }
 
-    // Filter purely informational notes from semantic failures
+    if (!schemaResults.pass) {
+      semanticDetails.push(...schemaResults.reasons);
+    }
+
     const blockingDetails = semanticDetails.filter(
       (d) => !d.startsWith("(info)"),
     );
@@ -146,6 +159,7 @@ export class AutoReviewer {
 
     let verdict: ReviewVerdict;
     if (!structuralPass) verdict = "fail";
+    else if (!schemaResults.pass) verdict = "fail";
     else if (!semanticPass && state.retriesRemaining > 0) verdict = "fail";
     else if (!semanticPass && state.retriesRemaining <= 0) verdict = "cascade";
     else verdict = "pass";
@@ -155,6 +169,7 @@ export class AutoReviewer {
       .map((r) => `${r.name}: ${r.message}`);
     const summaryParts: string[] = [];
     if (failedNames.length) summaryParts.push(failedNames.join("; "));
+    if (!schemaResults.pass) summaryParts.push(schemaResults.reasons.join("; "));
     if (blockingDetails.length) summaryParts.push(blockingDetails.join("; "));
     const summary =
       summaryParts.join(" | ") ||
@@ -164,16 +179,64 @@ export class AutoReviewer {
 
     return {
       verdict,
-      reasons: [...failedNames, ...blockingDetails],
+      reasons: [...failedNames, ...schemaResults.reasons, ...blockingDetails],
       reviewer: "auto",
       timestamp: new Date().toISOString(),
       metadata: {
         summary,
         structuralPass,
+        schemaPass: schemaResults.pass,
         semanticPass,
         details: blockingDetails,
       },
     };
+  }
+
+  private validateOutputSchema(
+    output: string,
+    schema: OutputSchema,
+  ): { pass: boolean; reasons: string[] } {
+    const reasons: string[] = [];
+
+    if (schema.requiredSections.length > 0) {
+      for (const section of schema.requiredSections) {
+        const normalizedSection = section.toLowerCase().trim();
+        const headingPattern = new RegExp(
+          `^#{1,3}\\s+.*${this.escapeRegex(normalizedSection)}.*$`,
+          "im",
+        );
+        const exactPattern = new RegExp(
+          `^#{1,3}\\s+${this.escapeRegex(section)}\\s*$`,
+          "im",
+        );
+
+        if (!headingPattern.test(output) && !exactPattern.test(output)) {
+          reasons.push(`Missing required section: "${section}"`);
+        }
+      }
+    }
+
+    if (schema.format === "json") {
+      const trimmed = output.trim();
+      if (!(trimmed.startsWith("{") || trimmed.startsWith("["))) {
+        reasons.push("Output format must be valid JSON");
+      } else {
+        try {
+          JSON.parse(trimmed);
+        } catch {
+          reasons.push("Output is not valid JSON");
+        }
+      }
+    }
+
+    return {
+      pass: reasons.length === 0,
+      reasons,
+    };
+  }
+
+  private escapeRegex(str: string): string {
+    return str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   }
 
   private safeCheck(
