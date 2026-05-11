@@ -73,6 +73,7 @@ export interface BridgeConfig {
   piProvider?: string;
   piModel?: string;
   piApiKey?: string;
+  allowedCommands?: string[];
   getSecrets?: (key: string) => Promise<string | undefined>;
   storeSecret?: (key: string, value: string) => Promise<void>;
   deleteSecret?: (key: string) => Promise<void>;
@@ -115,6 +116,7 @@ export class EngineBridge {
   private _piProvider: string;
   private _piModel: string;
   private _piApiKey?: string;
+  private _allowedCommands: string[];
   private readonly _log: BridgeLogger;
   private readonly _onStateUpdate: BridgeConfig["onStateUpdate"];
   private readonly _onAgentEvent: BridgeConfig["onAgentEvent"];
@@ -142,6 +144,7 @@ export class EngineBridge {
     this._piProvider = config.piProvider || "anthropic";
     this._piModel = config.piModel || "claude-sonnet-4-20250514";
     this._piApiKey = config.piApiKey;
+    this._allowedCommands = config.allowedCommands || [];
     this._log = log;
     this._onStateUpdate = config.onStateUpdate;
     this._onAgentEvent = config.onAgentEvent;
@@ -168,6 +171,7 @@ export class EngineBridge {
           apiKey: this._piApiKey,
           provider: this._piProvider,
           model: this._piModel,
+          allowedCommands: this._allowedCommands,
         });
       case "anthropic":
         return this._apiKey

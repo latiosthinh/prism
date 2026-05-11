@@ -586,6 +586,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   const backend = config.get<"cursor" | "pi" | "anthropic">("backend", "cursor");
   const piProvider = config.get<string>("piProvider", "anthropic");
   const piModel = config.get<string>("piModel", "claude-sonnet-4-20250514");
+  const allowedCommands = config.get<string[]>("allowedCommands", []);
 
   const bridge = new EngineBridge(
     {
@@ -595,6 +596,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       piProvider,
       piModel,
       piApiKey: piApiKey || undefined,
+      allowedCommands,
       getSecrets: (key: string) => context.secrets.get(key),
       storeSecret: (key: string, value: string) => context.secrets.store(key, value),
       deleteSecret: (key: string) => context.secrets.delete(key),

@@ -15,6 +15,7 @@ export interface PiSdkRunnerConfig {
   apiKey?: string;
   provider?: string;
   model?: string;
+  allowedCommands?: string[];
 }
 
 export interface RunnerOptions {
@@ -43,6 +44,7 @@ export class PiSdkStepRunner implements StepRunner {
       provider: config.provider || "anthropic",
       model: config.model || "claude-sonnet-4-20250514",
       apiKey: config.apiKey,
+      allowedCommands: config.allowedCommands || ["ls", "cat", "grep", "find", "head", "tail", "wc", "echo", "mkdir", "touch", "npm", "node", "python", "git", "cp", "mv", "rm"],
     };
   }
 
@@ -335,6 +337,27 @@ export class PiSdkStepRunner implements StepRunner {
           command: Type.String({ description: "Command to execute" }),
         }),
         execute: async (_toolCallId: string, params: { command: string }) => {
+          const cmdBinary = params.command.trim().split(/\s+/)[0].replace(/^\.\//, "");
+          const allowed = this.config.allowedCommands ?? [];
+          const isAllowed = allowed.some((pattern) => {
+            if (pattern === cmdBinary) return true;
+            if (pattern.includes("*")) {
+              const regex = new RegExp("^" + pattern.replace(/\*/g, ".*") + "$");
+              return regex.test(cmdBinary);
+            }
+            return false;
+          });
+
+          if (!isAllowed) {
+            const msg = `Command blocked by security policy: "${cmdBinary}" is not in the allowed commands list. Add it to prism.allowedCommands in settings.`;
+            emit("error", msg);
+            return {
+              content: [{ type: "text", text: msg }],
+              details: { command: params.command, blocked: true, binary: cmdBinary },
+              isError: true,
+            };
+          }
+
           emit("progress", `Executing: ${params.command}`);
           try {
             const result = execSync(params.command, {
