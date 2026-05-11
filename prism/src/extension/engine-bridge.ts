@@ -2,6 +2,7 @@ import * as fs from "fs";
 import * as path from "path";
 import { v4 as uuidv4 } from "uuid";
 import * as yaml from "yaml";
+import * as diff from "diff";
 import {
   PipelineDefinition,
   PipelineRunState,
@@ -50,6 +51,19 @@ export interface StepStateSummary {
   retriesRemaining: number;
   outputArtifact?: string;
   error?: string;
+  artifactDiff?: ArtifactDiff;
+}
+
+export interface ArtifactDiff {
+  added: number;
+  removed: number;
+  hunks: Array<{
+    oldStart: number;
+    oldLines: number;
+    newStart: number;
+    newLines: number;
+    lines: string[];
+  }>;
 }
 
 export interface BridgeState {
@@ -601,6 +615,9 @@ export class EngineBridge {
     if (pipeline) {
       for (const def of pipeline.steps) {
         const s = run.steps[def.id];
+        const artifactDiff = s?.status === "in_review" || s?.status === "approved"
+          ? this.computeArtifactDiff(run.runId, def.id)
+          : undefined;
         steps.push({
           id: def.id,
           name: def.name,
@@ -612,6 +629,7 @@ export class EngineBridge {
           retriesRemaining: s?.retriesRemaining ?? def.maxRetries,
           outputArtifact: s?.outputArtifact,
           error: s?.error,
+          artifactDiff,
         });
       }
     }
@@ -639,6 +657,7 @@ export class EngineBridge {
       gate: def.gate,
       revision: 0,
       retriesRemaining: def.maxRetries,
+      artifactDiff: undefined,
     }));
   }
 
@@ -784,6 +803,49 @@ export class EngineBridge {
   saveSkill(id: string, content: string): void {
     this._skillLoader.save(id, content);
     this.refreshCaches();
+  }
+
+  private computeArtifactDiff(runId: string, stepId: string): ArtifactDiff | undefined {
+    try {
+      const stepDir = path.join(this._workspaceRoot, PIPELINE_DIR, "runs", runId, "steps", stepId);
+      const currentPath = path.join(stepDir, "latest.md");
+      const archiveDir = path.join(stepDir, "archive");
+      if (!fs.existsSync(currentPath)) return undefined;
+
+      const currentContent = fs.readFileSync(currentPath, "utf8");
+
+      // Find the previous revision
+      if (!fs.existsSync(archiveDir)) return undefined;
+      const revisions = fs.readdirSync(archiveDir)
+        .filter((f) => f.startsWith("rev-") && f.endsWith(".md"))
+        .sort();
+      if (revisions.length < 2) return undefined;
+
+      const prevFile = revisions[revisions.length - 2];
+      const prevContent = fs.readFileSync(path.join(archiveDir, prevFile), "utf8");
+
+      if (prevContent === currentContent) return undefined;
+
+      const changes = diff.structuredPatch(prevFile, currentPath, prevContent, currentContent);
+      const hunks = changes.hunks.map((h) => ({
+        oldStart: h.oldStart,
+        oldLines: h.oldLines,
+        newStart: h.newStart,
+        newLines: h.newLines,
+        lines: h.lines,
+      }));
+
+      let added = 0;
+      let removed = 0;
+      for (const line of changes.hunks.flatMap((h) => h.lines)) {
+        if (line.startsWith("+") && !line.startsWith("+++")) added++;
+        else if (line.startsWith("-") && !line.startsWith("---")) removed++;
+      }
+
+      return { added, removed, hunks };
+    } catch {
+      return undefined;
+    }
   }
 
   rerunStep(stepId: string): boolean {

@@ -5,9 +5,23 @@
   "version": "1.0.0",
   "publisher": "prism",
   "license": "MIT",
-  "engines": { "vscode": "^1.85.0" },
-  "categories": ["AI", "Programming Languages", "Other"],
-  "keywords": ["ai", "agent", "pipeline", "multi-agent", "sdlc", "orchestration", "prism"],
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "AI",
+    "Programming Languages",
+    "Other"
+  ],
+  "keywords": [
+    "ai",
+    "agent",
+    "pipeline",
+    "multi-agent",
+    "sdlc",
+    "orchestration",
+    "prism"
+  ],
   "icon": "assets/icon.png",
   "galleryBanner": {
     "color": "#09090b",
@@ -27,27 +41,71 @@
   "main": "./dist/extension.js",
   "contributes": {
     "commands": [
-      { "command": "prism.openPanel", "title": "PRISM: Open Pipeline", "icon": "$(symbol-ruler)" },
-      { "command": "prism.newPipeline", "title": "PRISM: Start New Pipeline", "icon": "$(add)" },
-      { "command": "prism.startRun", "title": "PRISM: Run Pipeline" },
-      { "command": "prism.approveStep", "title": "PRISM: Approve Current Step" },
-      { "command": "prism.rejectStep", "title": "PRISM: Reject Current Step" },
-      { "command": "prism.openArtifact", "title": "PRISM: Open Artifact" },
-      { "command": "prism.showDecisionLog", "title": "PRISM: Show Decision Log" },
-      { "command": "prism.openSettings", "title": "PRISM: Open Settings" },
-      { "command": "prism.resumeRun", "title": "PRISM: Resume Run" },
-      { "command": "prism.dryRun", "title": "PRISM: Dry-Run Pipeline" },
-      { "command": "prism.verifyCursorSdk", "title": "PRISM: Verify Cursor SDK" }
+      {
+        "command": "prism.openPanel",
+        "title": "PRISM: Open Pipeline",
+        "icon": "$(symbol-ruler)"
+      },
+      {
+        "command": "prism.newPipeline",
+        "title": "PRISM: Start New Pipeline",
+        "icon": "$(add)"
+      },
+      {
+        "command": "prism.startRun",
+        "title": "PRISM: Run Pipeline"
+      },
+      {
+        "command": "prism.approveStep",
+        "title": "PRISM: Approve Current Step"
+      },
+      {
+        "command": "prism.rejectStep",
+        "title": "PRISM: Reject Current Step"
+      },
+      {
+        "command": "prism.openArtifact",
+        "title": "PRISM: Open Artifact"
+      },
+      {
+        "command": "prism.showDecisionLog",
+        "title": "PRISM: Show Decision Log"
+      },
+      {
+        "command": "prism.openSettings",
+        "title": "PRISM: Open Settings"
+      },
+      {
+        "command": "prism.resumeRun",
+        "title": "PRISM: Resume Run"
+      },
+      {
+        "command": "prism.dryRun",
+        "title": "PRISM: Dry-Run Pipeline"
+      },
+      {
+        "command": "prism.verifyCursorSdk",
+        "title": "PRISM: Verify Cursor SDK"
+      }
     ],
     "configuration": {
       "title": "PRISM",
       "properties": {
-        "prism.apiKey": { "type": "string", "description": "Cursor API key for the Cursor SDK runner. Get one at cursor.com → Account → API Keys.", "default": "", "deprecationMessage": "⬆️ API keys are now stored in VS Code SecretStorage. Use PRISM Settings to manage your keys securely." },
+        "prism.apiKey": {
+          "type": "string",
+          "description": "Cursor API key for the Cursor SDK runner. Get one at cursor.com → Account → API Keys.",
+          "default": "",
+          "deprecationMessage": "⬆️ API keys are now stored in VS Code SecretStorage. Use PRISM Settings to manage your keys securely."
+        },
         "prism.backend": {
           "type": "string",
           "description": "AI backend to use for pipeline steps",
           "default": "cursor",
-          "enum": ["cursor", "pi", "anthropic"],
+          "enum": [
+            "cursor",
+            "pi",
+            "anthropic"
+          ],
           "enumDescriptions": [
             "Cursor SDK (composer-2 model)",
             "PRISM SDK (supports 30+ providers via pi-ai)",
@@ -71,18 +129,76 @@
           "deprecationMessage": "⬆️ API keys are now stored in VS Code SecretStorage. Use PRISM Settings to manage your keys securely."
         },
         "prism.model": {
-          "type": "string", "description": "Model for agents (only used with Anthropic fallback; Cursor SDK uses composer-2)",
+          "type": "string",
+          "description": "Model for agents (only used with Anthropic fallback; Cursor SDK uses composer-2)",
           "default": "claude-sonnet-4-20250514",
-          "enum": ["default","composer-2","composer-1.5","claude-sonnet-4-20250514","claude-3.5-haiku-20241022","gpt-4o-2024-11-20","gpt-4o-mini-2024-07-18","gemini-2.0-flash-001","gemini-2.5-pro-exp-03-25"]
+          "enum": [
+            "default",
+            "composer-2",
+            "composer-1.5",
+            "claude-sonnet-4-20250514",
+            "claude-3.5-haiku-20241022",
+            "gpt-4o-2024-11-20",
+            "gpt-4o-mini-2024-07-18",
+            "gemini-2.0-flash-001",
+            "gemini-2.5-pro-exp-03-25"
+          ]
         },
-        "prism.modelOverride": { "type": "string", "description": "Freeform model override — if set, takes precedence", "default": "" },
-        "prism.maxTokens": { "type": "number", "description": "Maximum tokens per agent response", "default": 8192 },
-        "prism.autoApproveYolo": { "type": "boolean", "description": "Automatically approve YOLO tasks", "default": false, "deprecationMessage": "⬆️ Replaced by prism.gates.autoApprove. Your setting has been migrated." },
-        "prism.gates.autoApprove": { "type": "boolean", "description": "Auto-approve all gates without human review. ⚠️ Use with caution — agents will execute without manual approval.", "default": false },
-        "prism.gitignoreArtifacts": { "type": "boolean", "description": "Add .prism/ to .gitignore", "default": false },
-        "prism.gateTimeout": { "type": "number", "description": "Default timeout in seconds for gate approval (0 = no timeout)", "default": 0 },
-        "prism.allowedCommands": { "type": "array", "items": {"type":"string"}, "description": "Glob patterns for commands agents are allowed to run", "default": ["ls","cat","grep","find","head","tail","wc","echo","mkdir","touch"] },
-        "prism.commandConfirmation": { "type": "boolean", "description": "Require user confirmation before executing any command", "default": true }
+        "prism.modelOverride": {
+          "type": "string",
+          "description": "Freeform model override — if set, takes precedence",
+          "default": ""
+        },
+        "prism.maxTokens": {
+          "type": "number",
+          "description": "Maximum tokens per agent response",
+          "default": 8192
+        },
+        "prism.autoApproveYolo": {
+          "type": "boolean",
+          "description": "Automatically approve YOLO tasks",
+          "default": false,
+          "deprecationMessage": "⬆️ Replaced by prism.gates.autoApprove. Your setting has been migrated."
+        },
+        "prism.gates.autoApprove": {
+          "type": "boolean",
+          "description": "Auto-approve all gates without human review. ⚠️ Use with caution — agents will execute without manual approval.",
+          "default": false
+        },
+        "prism.gitignoreArtifacts": {
+          "type": "boolean",
+          "description": "Add .prism/ to .gitignore",
+          "default": false
+        },
+        "prism.gateTimeout": {
+          "type": "number",
+          "description": "Default timeout in seconds for gate approval (0 = no timeout)",
+          "default": 0
+        },
+        "prism.allowedCommands": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Glob patterns for commands agents are allowed to run",
+          "default": [
+            "ls",
+            "cat",
+            "grep",
+            "find",
+            "head",
+            "tail",
+            "wc",
+            "echo",
+            "mkdir",
+            "touch"
+          ]
+        },
+        "prism.commandConfirmation": {
+          "type": "boolean",
+          "description": "Require user confirmation before executing any command",
+          "default": true
+        }
       }
     }
   },
@@ -100,10 +216,11 @@
   "dependencies": {
     "@anthropic-ai/sdk": "^0.39.0",
     "@cursor/sdk": "^1.0.12",
-    "@prism/sdk": "file:../packages/prism-sdk",
-    "@earendil-works/pi-ai": "^0.74.0",
     "@earendil-works/pi-agent-core": "^0.74.0",
+    "@earendil-works/pi-ai": "^0.74.0",
+    "@prism/sdk": "file:../packages/prism-sdk",
     "@xyflow/react": "^12.10.2",
+    "diff": "^9.0.0",
     "gray-matter": "^4.0.3",
     "marked": "^15.0.4",
     "uuid": "^11.1.0",
@@ -112,6 +229,7 @@
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.0.0",
+    "@types/diff": "^7.0.2",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
     "@types/uuid": "^10.0.0",

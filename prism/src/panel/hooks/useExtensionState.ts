@@ -22,6 +22,17 @@ export interface StepStateSummary {
   retriesRemaining: number;
   outputArtifact?: string;
   error?: string;
+  artifactDiff?: {
+    added: number;
+    removed: number;
+    hunks: Array<{
+      oldStart: number;
+      oldLines: number;
+      newStart: number;
+      newLines: number;
+      lines: string[];
+    }>;
+  };
 }
 
 export interface BridgeState {

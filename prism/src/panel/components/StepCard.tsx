@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useState } from "react";
 import { Icon } from "./Icon.js";
 import type { StepStateSummary } from "../hooks/useExtensionState.js";
 
@@ -83,6 +83,7 @@ export const StepCard: React.FC<StepCardProps> = ({
   onResume,
 }) => {
   const visual = VISUALS[step.status] ?? VISUALS.pending;
+  const [showDiff, setShowDiff] = useState(false);
   const isRunning = step.status === "running";
   const isPending = step.status === "pending";
   const inReview = step.status === "in_review";
@@ -181,6 +182,42 @@ export const StepCard: React.FC<StepCardProps> = ({
       {step.error && (
         <div className="font-mono-code text-mono-code text-error bg-error/10 border border-error/30 rounded px-sm py-xs whitespace-pre-wrap break-words">
           {step.error}
+        </div>
+      )}
+
+      {step.artifactDiff && (
+        <div className="mt-sm" onClick={(e) => e.stopPropagation()}>
+          <button
+            type="button"
+            onClick={() => setShowDiff((v) => !v)}
+            className="flex items-center gap-xs text-body-sm text-on-surface-variant hover:text-on-surface transition-colors"
+          >
+            <Icon name={showDiff ? "unfold_less" : "unfold_more"} size={14} />
+            View changes
+            <span className="text-[11px] text-secondary">+{step.artifactDiff.added}</span>
+            <span className="text-[11px] text-error">-{step.artifactDiff.removed}</span>
+          </button>
+          {showDiff && (
+            <div className="mt-sm font-mono-code text-[11px] bg-surface-container-high border border-[#27272a] rounded p-sm max-h-[300px] overflow-auto whitespace-pre">
+              {step.artifactDiff.hunks.map((hunk, hi) => (
+                <div key={hi} className="mb-sm">
+                  <div className="text-on-surface-variant mb-xs">
+                    @@ -{hunk.oldStart},{hunk.oldLines} +{hunk.newStart},{hunk.newLines} @@
+                  </div>
+                  {hunk.lines.map((line, li) => {
+                    let lineClass = "text-on-surface-variant";
+                    if (line.startsWith("+")) lineClass = "text-secondary";
+                    else if (line.startsWith("-")) lineClass = "text-error";
+                    return (
+                      <div key={li} className={lineClass}>
+                        {line}
+                      </div>
+                    );
+                  })}
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
 

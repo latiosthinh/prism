@@ -217,6 +217,12 @@ export const Pipeline: React.FC<PipelineProps> = ({
                 &apos;{inReviewStep.name}&apos;
               </span>{" "}
               output before proceeding.
+              {inReviewStep.artifactDiff && (
+                <span className="ml-sm text-[11px]">
+                  <span className="text-secondary">+{inReviewStep.artifactDiff.added}</span>{" "}
+                  <span className="text-error">-{inReviewStep.artifactDiff.removed}</span>
+                </span>
+              )}
             </p>
           </div>
           <div className="flex gap-sm items-center shrink-0">
