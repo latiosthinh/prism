@@ -6,7 +6,7 @@
     "prism"
   ],
   "scripts": {
-    "build": "npm run build --workspace=@prism/sdk && npm run build --workspace=prism",
+    "build": "npm run build --workspace=@prism/sdk && npm run build --workspace=@prism/cli && npm run build --workspace=prism",
     "dev": "npm run dev --workspace=prism",
     "test": "npm run test --workspaces"
   }
