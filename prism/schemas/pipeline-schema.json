@@ -1,0 +1,240 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://prism.dev/schemas/pipeline.schema.json",
+  "title": "PRISM Pipeline",
+  "description": "A PRISM pipeline definition file",
+  "type": "object",
+  "required": ["name", "steps"],
+  "properties": {
+    "name": {
+      "type": "string",
+      "description": "Human-readable pipeline name",
+      "examples": ["Feature Build", "Code Review"]
+    },
+    "version": {
+      "type": "string",
+      "description": "Pipeline version",
+      "default": "1.0",
+      "examples": ["1.0"]
+    },
+    "description": {
+      "type": "string",
+      "description": "What this pipeline does"
+    },
+    "execution": {
+      "type": "object",
+      "description": "Execution configuration",
+      "properties": {
+        "provider": {
+          "type": "string",
+          "description": "Default AI provider for all steps",
+          "enum": ["cursor", "pi", "anthropic"],
+          "default": "cursor"
+        },
+        "model": {
+          "type": "string",
+          "description": "Default model for all steps",
+          "default": "composer-2"
+        }
+      }
+    },
+    "steps": {
+      "type": "array",
+      "description": "Ordered list of pipeline steps",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/definitions/StepDefinition"
+      }
+    },
+    "agents": {
+      "type": "array",
+      "description": "Custom agents defined inline",
+      "items": {
+        "$ref": "#/definitions/AgentDefinition"
+      }
+    },
+    "loop_groups": {
+      "type": "array",
+      "description": "Groups of steps that loop together",
+      "items": {
+        "$ref": "#/definitions/LoopGroup"
+      }
+    }
+  },
+  "definitions": {
+    "StepDefinition": {
+      "type": "object",
+      "required": ["id", "name", "agent", "artifact"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z0-9-]+$",
+          "description": "Unique step identifier (lowercase, digits, hyphens)",
+          "examples": ["expand-idea", "architect-plan"]
+        },
+        "name": {
+          "type": "string",
+          "description": "Human-readable step name",
+          "examples": ["Expand Idea", "Architect Plan"]
+        },
+        "agent": {
+          "type": "string",
+          "description": "Agent to use for this step (built-in or custom)",
+          "examples": ["executor", "architect", "critic"]
+        },
+        "model": {
+          "type": "string",
+          "description": "Model override for this step",
+          "default": "composer-2",
+          "examples": ["claude-sonnet-4-20250514", "gpt-4o-2024-11-20"]
+        },
+        "gate": {
+          "type": "boolean",
+          "description": "Require human approval after this step completes",
+          "default": true
+        },
+        "maxRetries": {
+          "type": "integer",
+          "description": "Maximum number of retry attempts on failure",
+          "minimum": 0,
+          "maximum": 10,
+          "default": 3
+        },
+        "retryDelayMs": {
+          "type": "integer",
+          "description": "Base delay between retries in milliseconds",
+          "minimum": 0,
+          "maximum": 60000,
+          "default": 0
+        },
+        "retryBackoffMultiplier": {
+          "type": "number",
+          "description": "Exponential backoff multiplier for retry delays",
+          "minimum": 1,
+          "maximum": 10,
+          "default": 2
+        },
+        "artifact": {
+          "type": "string",
+          "description": "Output artifact file path (relative to .prism runs directory)",
+          "examples": [".prism/artifacts/plan.md"]
+        },
+        "depends_on": {
+          "type": "array",
+          "description": "Step IDs this step depends on (must complete first)",
+          "items": { "type": "string" },
+          "default": []
+        },
+        "tags": {
+          "type": "array",
+          "description": "Tags for categorizing this step",
+          "items": { "type": "string" },
+          "default": [],
+          "examples": [["code", "implementation"], ["docs", "review"]]
+        },
+        "skills": {
+          "type": "array",
+          "description": "Skill files to include in the agent's context",
+          "items": { "type": "string" },
+          "default": [],
+          "examples": [["project-conventions", "api-reference"]]
+        },
+        "loop": {
+          "$ref": "#/definitions/LoopConfig"
+        },
+        "thinking_level": {
+          "type": "string",
+          "description": "Depth of reasoning for the agent",
+          "enum": ["low", "medium", "high"],
+          "default": "medium"
+        }
+      }
+    },
+    "LoopConfig": {
+      "type": "object",
+      "required": ["mode"],
+      "properties": {
+        "mode": {
+          "type": "string",
+          "description": "Loop mode",
+          "enum": ["task", "phase", "cascade"]
+        },
+        "agent": {
+          "type": "string",
+          "description": "Agent to use for loop iterations"
+        },
+        "maxIterations": {
+          "type": "integer",
+          "description": "Maximum number of loop iterations",
+          "minimum": 1,
+          "maximum": 50,
+          "default": 3
+        },
+        "target": {
+          "type": "string",
+          "description": "Target step ID for cascade loops"
+        }
+      }
+    },
+    "AgentDefinition": {
+      "type": "object",
+      "required": ["id", "label"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique agent identifier"
+        },
+        "label": {
+          "type": "string",
+          "description": "Display name for the agent"
+        },
+        "description": {
+          "type": "string",
+          "description": "What this agent does"
+        },
+        "category": {
+          "type": "string",
+          "description": "Agent category",
+          "default": "custom"
+        },
+        "systemPrompt": {
+          "type": "string",
+          "description": "System prompt for the agent"
+        },
+        "artifactFile": {
+          "type": "string",
+          "description": "Default artifact output file"
+        }
+      }
+    },
+    "LoopGroup": {
+      "type": "object",
+      "required": ["name", "steps"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Loop group name"
+        },
+        "steps": {
+          "type": "array",
+          "description": "Step IDs in this loop group",
+          "minItems": 2,
+          "items": { "type": "string" }
+        },
+        "maxIterations": {
+          "type": "integer",
+          "description": "Maximum iterations for the loop group",
+          "minimum": 1,
+          "maximum": 50,
+          "default": 3
+        },
+        "exitOn": {
+          "type": "string",
+          "description": "Exit condition for the loop group",
+          "enum": ["all_pass", "last_pass"],
+          "default": "all_pass"
+        }
+      }
+    }
+  }
+}

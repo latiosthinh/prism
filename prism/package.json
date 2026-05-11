@@ -200,7 +200,13 @@
           "default": true
         }
       }
-    }
+    },
+    "jsonValidation": [
+      {
+        "fileMatch": ["*.prism.yaml", "*.prism.yml", "prism.yaml"],
+        "url": "./schemas/pipeline-schema.json"
+      }
+    ]
   },
   "scripts": {
     "build": "npm run build:extension && npm run build:panel",
