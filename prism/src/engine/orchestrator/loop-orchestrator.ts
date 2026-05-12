@@ -22,6 +22,7 @@ import { SkillLoader } from "../artifacts/skill-loader.js";
 import { evaluateCondition } from "../pipeline/conditions.js";
 import { PrismBudgetError } from "../errors/budget-error.js";
 import { appendAudit, ensureRunDir } from "../audit/audit-writer.js";
+import { StepExecutor } from "../runner/step-executor.js";
 import type {
   RunStartEvent,
   RunDoneEvent,
@@ -49,6 +50,7 @@ interface StepExecutionResult {
   error?: string;
   needsGate: boolean;
   gateApproved?: boolean;
+  reviewVerdict?: "pass" | "fail" | "cascade";
 }
 
 export class LoopOrchestrator {
@@ -57,6 +59,7 @@ export class LoopOrchestrator {
   private readonly loopManager: LoopManager;
   private readonly cascadeRejector: CascadeRejector;
   private readonly reviewer: AutoReviewer;
+  private readonly stepExecutor: StepExecutor;
   private skillLoader: SkillLoader | null;
 
   constructor() {
@@ -65,6 +68,7 @@ export class LoopOrchestrator {
     this.loopManager = new LoopManager();
     this.cascadeRejector = new CascadeRejector();
     this.reviewer = new AutoReviewer();
+    this.stepExecutor = new StepExecutor();
     this.skillLoader = null;
   }
 
@@ -85,6 +89,7 @@ export class LoopOrchestrator {
     } = config;
 
     this.skillLoader = new SkillLoader(cwd);
+    this.stepExecutor.initSkillLoader(cwd);
 
     const decision = (
       type: Decision["type"],
@@ -296,6 +301,7 @@ export class LoopOrchestrator {
         config,
         decision,
         event,
+        runDir,
       );
 
       const failedStep = results.find((r) => !r.success);
@@ -321,6 +327,7 @@ export class LoopOrchestrator {
     config: OrchestratorConfig,
     decision: (type: Decision["type"], summary: string, detail?: string, stepId?: string) => void,
     event: (type: AgentEvent["type"], stepId: string, content: string, meta?: Record<string, unknown>) => void,
+    runDir: string,
   ): Promise<StepExecutionResult[]> {
     const { waitForGate } = config;
 
@@ -353,6 +360,7 @@ export class LoopOrchestrator {
         config,
         decision,
         event,
+        runDir,
       );
     });
 
@@ -381,186 +389,21 @@ export class LoopOrchestrator {
     config: OrchestratorConfig,
     decision: (type: Decision["type"], summary: string, detail?: string, stepId?: string) => void,
     event: (type: AgentEvent["type"], stepId: string, content: string, meta?: Record<string, unknown>) => void,
+    runDir: string,
   ): Promise<StepExecutionResult> {
-    const { cwd, runner, agentRegistry, onEvent, signal } = config;
+    const { cwd, runner, agentRegistry, onEvent, onDecision, signal } = config;
 
-    try {
-      const skillsContext =
-        stepDef.skills && stepDef.skills.length > 0 && this.skillLoader
-          ? this.skillLoader.buildContextForAgent(
-              stepDef.skills,
-              stepDef.agent,
-            )
-          : "";
+    const outcome = await this.stepExecutor.executeStep(
+      stepId,
+      stepDef,
+      stepState,
+      pipeline,
+      run,
+      { cwd, runner, agentRegistry, onEvent, onDecision, signal },
+      runDir,
+    );
 
-      const agentRecord = agentRegistry.load(stepDef.agent);
-      const systemPrompt = agentRecord?.systemPrompt ?? "";
-
-      const artifacts: Record<string, ArtifactData> = {
-        "system-prompt": { frontmatter: {}, body: systemPrompt },
-      };
-      const idea = run.idea;
-
-      for (const prevStep of pipeline.steps) {
-        if (prevStep.id === stepDef.id) break;
-        const prevState = run.steps[prevStep.id];
-        if (!prevState) continue;
-        const artifactPath = path.join(
-          cwd,
-          ".PRISM",
-          "runs",
-          run.runId,
-          "steps",
-          prevStep.id,
-          "latest.md",
-        );
-        try {
-          if (fs.existsSync(artifactPath)) {
-            const content = fs.readFileSync(artifactPath, "utf8");
-            artifacts[prevStep.artifact || prevStep.id] = {
-              frontmatter: {},
-              body: content,
-            };
-          }
-        } catch {
-          /* ignore missing artifact */
-        }
-      }
-
-      const result = await runner.run(
-        stepDef,
-        {
-          cwd,
-          model: stepDef.model,
-          idea,
-          artifacts,
-          skillsContext,
-        },
-        { cwd, onEvent, signal },
-      );
-
-      stepState.tokensIn = result.tokensIn;
-      stepState.tokensOut = result.tokensOut;
-      stepState.tokensCachedIn = result.tokensCachedIn;
-      stepState.costUsd = result.costUsd;
-      stepState.provider = result.provider;
-      stepState.completedAtMs = Date.now();
-
-      const artifactDir = path.join(
-        cwd,
-        ".PRISM",
-        "runs",
-        run.runId,
-        "steps",
-        stepDef.id,
-      );
-      try {
-        fs.mkdirSync(artifactDir, { recursive: true });
-        fs.writeFileSync(path.join(artifactDir, "latest.md"), result.text, "utf8");
-        const archiveDir = path.join(artifactDir, "archive");
-        fs.mkdirSync(archiveDir, { recursive: true });
-        fs.writeFileSync(
-          path.join(archiveDir, `rev-${stepState.revision}.md`),
-          result.text,
-          "utf8",
-        );
-        stepState.outputArtifact = path
-          .join(".PRISM", "runs", run.runId, "steps", stepDef.id, "latest.md")
-          .replace(/\\/g, "/");
-        stepState.artifactPath = stepState.outputArtifact;
-      } catch (err: any) {
-        event(
-          "error",
-          stepId,
-          `Failed to write artifact: ${err?.message ?? err}`,
-        );
-      }
-
-      const duration = stepState.completedAtMs ? stepState.completedAtMs - (stepState.startedAtMs ?? 0) : 0;
-      const stepDoneEvent: StepDoneEvent = {
-        type: "step_done",
-        runId: run.runId,
-        ts: Date.now(),
-        stepId,
-        tokensIn: stepState.tokensIn,
-        tokensOut: stepState.tokensOut,
-        tokensCached: stepState.tokensCachedIn,
-        costUsd: stepState.costUsd,
-        durationMs: duration,
-        artifactPath: stepState.outputArtifact ?? "",
-      };
-      appendAudit(runDir, stepDoneEvent);
-
-      const review = await this.reviewer.review(
-        stepId,
-        stepState,
-        result.text,
-        undefined,
-        undefined,
-        stepDef.tags,
-        stepDef.outputSchema,
-      );
-      stepState.reviews.push(review);
-
-      const reviewSummary =
-        (review.metadata?.summary as string | undefined) ??
-        review.reasons.join("; ");
-      const reviewDetail =
-        review.reasons.length > 0 ? review.reasons.join("\n") : undefined;
-      decision(
-        review.verdict === "pass" ? "auto_review_pass" : "auto_review_fail",
-        reviewSummary || `Auto review: ${review.verdict}`,
-        reviewDetail,
-        stepId,
-      );
-
-      if (review.verdict === "fail" && stepState.retriesRemaining > 0) {
-        stepState.retriesRemaining--;
-        const attempt = stepDef.maxRetries - stepState.retriesRemaining;
-        const delayMs = stepDef.retryDelayMs > 0
-          ? stepDef.retryDelayMs * Math.pow(stepDef.retryBackoffMultiplier ?? 2, attempt - 1)
-          : 0;
-        event(
-          "progress",
-          stepId,
-          `Auto-review failed; retrying in ${delayMs}ms (${stepState.retriesRemaining} left)`,
-        );
-        if (delayMs > 0) {
-          await this.sleep(delayMs);
-        }
-        return this.executeSingleStep(stepId, stepDef, stepState, pipeline, run, config, decision, event);
-      }
-
-      if (review.verdict !== "pass") {
-        this.machine.transitionStep(run, stepId, "failed");
-        return { stepId, success: false, error: review.reasons.join("; "), needsGate: false };
-      }
-
-      if (stepDef.gate) {
-        this.machine.transitionStep(run, stepId, "in_review");
-        event("progress", stepId, "Awaiting human review...");
-        decision(
-          "user_note",
-          `Step "${stepDef.name}" awaiting human approval`,
-          undefined,
-          stepId,
-        );
-        return { stepId, success: true, needsGate: true };
-      } else {
-        this.machine.transitionStep(run, stepId, "approved");
-        return { stepId, success: true, needsGate: false };
-      }
-    } catch (err: any) {
-      const errMsg = err?.message ?? String(err);
-      event("error", stepId, `Runner failed: ${errMsg}`);
-      decision(
-        "step_failed",
-        `Step "${stepDef.name}" runner error: ${errMsg}`,
-        undefined,
-        stepId,
-      );
-      this.machine.transitionStep(run, stepId, "failed");
-      stepState.error = errMsg;
+    if (!outcome.success) {
       if (stepState.retriesRemaining > 0) {
         stepState.retriesRemaining--;
         const attempt = stepDef.maxRetries - stepState.retriesRemaining;
@@ -575,10 +418,16 @@ export class LoopOrchestrator {
         if (delayMs > 0) {
           await this.sleep(delayMs);
         }
-        return this.executeSingleStep(stepId, stepDef, stepState, pipeline, run, config, decision, event);
+        return this.executeSingleStep(stepId, stepDef, stepState, pipeline, run, config, decision, event, runDir);
       }
-      return { stepId, success: false, error: errMsg, needsGate: false };
+      return { stepId, success: false, error: outcome.error, needsGate: false, reviewVerdict: "fail" };
     }
+
+    if (outcome.needsGate) {
+      return { stepId, success: true, needsGate: true, reviewVerdict: "pass" };
+    }
+
+    return { stepId, success: true, needsGate: false, reviewVerdict: outcome.verdict === "pass" ? "pass" : "fail" };
   }
 
   private async runSequential(
@@ -766,98 +615,22 @@ export class LoopOrchestrator {
         }
       }
 
-      const skillsContext =
-        stepDef.skills && stepDef.skills.length > 0 && this.skillLoader
-          ? this.skillLoader.buildContextForAgent(
-              stepDef.skills,
-              stepDef.agent,
-            )
-          : "";
+      const stepResult = await this.executeSingleStep(
+        stepId,
+        stepDef,
+        stepState,
+        pipeline,
+        run,
+        config,
+        decision,
+        event,
+        runDir,
+      );
 
-      const agentRecord = agentRegistry.load(stepDef.agent);
-      const systemPrompt = agentRecord?.systemPrompt ?? "";
-
-      const artifacts: Record<string, ArtifactData> = {
-        "system-prompt": { frontmatter: {}, body: systemPrompt },
-      };
-      const idea = run.idea;
-
-      for (const prevStep of pipeline.steps) {
-        if (prevStep.id === stepDef.id) break;
-        const prevState = run.steps[prevStep.id];
-        if (!prevState) continue;
-        const artifactPath = path.join(
-          cwd,
-          ".PRISM",
-          "runs",
-          run.runId,
-          "steps",
-          prevStep.id,
-          "latest.md",
-        );
-        try {
-          if (fs.existsSync(artifactPath)) {
-            const content = fs.readFileSync(artifactPath, "utf8");
-            artifacts[prevStep.artifact || prevStep.id] = {
-              frontmatter: {},
-              body: content,
-            };
-          }
-        } catch {
-          /* ignore missing artifact */
-        }
-      }
-
-      let result: Awaited<ReturnType<typeof runner.run>>;
-      try {
-        result = await runner.run(
-          stepDef,
-          {
-            cwd,
-            model: stepDef.model,
-            idea,
-            artifacts,
-            skillsContext,
-          },
-          { cwd, onEvent, signal },
-        );
-
-        stepState.tokensIn = result.tokensIn;
-        stepState.tokensOut = result.tokensOut;
-        stepState.tokensCachedIn = result.tokensCachedIn;
-        stepState.costUsd = result.costUsd;
-        stepState.provider = result.provider;
-        stepState.completedAtMs = Date.now();
-      } catch (err: any) {
-        const errMsg = err?.message ?? String(err);
-        event("error", stepId, `Runner failed: ${errMsg}`);
-        decision(
-          "step_failed",
-          `Step "${stepDef.name}" runner error: ${errMsg}`,
-          undefined,
-          stepId,
-        );
-        this.machine.transitionStep(run, stepId, "failed");
-        stepState.error = errMsg;
-        if (stepState.retriesRemaining > 0) {
-          stepState.retriesRemaining--;
-          const attempt = stepDef.maxRetries - stepState.retriesRemaining;
-          const delayMs = stepDef.retryDelayMs > 0
-            ? stepDef.retryDelayMs * Math.pow(stepDef.retryBackoffMultiplier ?? 2, attempt - 1)
-            : 0;
-          event(
-            "progress",
-            stepId,
-            `Retrying in ${delayMs}ms (${stepState.retriesRemaining} retries left)...`,
-          );
-          if (delayMs > 0) {
-            await this.sleep(delayMs);
-          }
-          continue;
-        }
+      if (!stepResult.success) {
         decision(
           "step_rejected",
-          `Step failed after exhausting retries: ${errMsg}`,
+          `Step failed after exhausting retries: ${stepResult.error}`,
           undefined,
           stepId,
         );
@@ -866,92 +639,7 @@ export class LoopOrchestrator {
         return;
       }
 
-      const artifactDir = path.join(
-        cwd,
-        ".PRISM",
-        "runs",
-        run.runId,
-        "steps",
-        stepDef.id,
-      );
-      try {
-        fs.mkdirSync(artifactDir, { recursive: true });
-        fs.writeFileSync(path.join(artifactDir, "latest.md"), result.text, "utf8");
-        const archiveDir = path.join(artifactDir, "archive");
-        fs.mkdirSync(archiveDir, { recursive: true });
-        fs.writeFileSync(
-          path.join(archiveDir, `rev-${stepState.revision}.md`),
-          result.text,
-          "utf8",
-        );
-        stepState.outputArtifact = path
-          .join(".PRISM", "runs", run.runId, "steps", stepDef.id, "latest.md")
-          .replace(/\\/g, "/");
-        stepState.artifactPath = stepState.outputArtifact;
-      } catch (err: any) {
-        event(
-          "error",
-          stepId,
-          `Failed to write artifact: ${err?.message ?? err}`,
-        );
-      }
-
-      const duration = stepState.completedAtMs ? stepState.completedAtMs - (stepState.startedAtMs ?? 0) : 0;
-      const stepDoneEvent: StepDoneEvent = {
-        type: "step_done",
-        runId: run.runId,
-        ts: Date.now(),
-        stepId,
-        tokensIn: stepState.tokensIn,
-        tokensOut: stepState.tokensOut,
-        tokensCached: stepState.tokensCachedIn,
-        costUsd: stepState.costUsd,
-        durationMs: duration,
-        artifactPath: stepState.outputArtifact ?? "",
-      };
-      appendAudit(runDir, stepDoneEvent);
-
-      const review = await this.reviewer.review(
-        stepId,
-        stepState,
-        result.text,
-        undefined,
-        undefined,
-        stepDef.tags,
-        stepDef.outputSchema,
-      );
-      stepState.reviews.push(review);
-
-      const reviewSummary =
-        (review.metadata?.summary as string | undefined) ??
-        review.reasons.join("; ");
-      const reviewDetail =
-        review.reasons.length > 0 ? review.reasons.join("\n") : undefined;
-      decision(
-        review.verdict === "pass" ? "auto_review_pass" : "auto_review_fail",
-        reviewSummary || `Auto review: ${review.verdict}`,
-        reviewDetail,
-        stepId,
-      );
-
-      if (review.verdict === "fail" && stepState.retriesRemaining > 0) {
-        stepState.retriesRemaining--;
-        const attempt = stepDef.maxRetries - stepState.retriesRemaining;
-        const delayMs = stepDef.retryDelayMs > 0
-          ? stepDef.retryDelayMs * Math.pow(stepDef.retryBackoffMultiplier ?? 2, attempt - 1)
-          : 0;
-        event(
-          "progress",
-          stepId,
-          `Auto-review failed; retrying in ${delayMs}ms (${stepState.retriesRemaining} left)`,
-        );
-        if (delayMs > 0) {
-          await this.sleep(delayMs);
-        }
-        continue;
-      }
-
-      if (review.verdict !== "pass" && stepDef.loop?.mode === "phase") {
+      if (stepResult.reviewVerdict !== "pass" && stepDef.loop?.mode === "phase") {
         const prevStepId = order[Math.max(0, i - 1)];
         if (
           prevStepId !== stepId &&
@@ -982,7 +670,7 @@ export class LoopOrchestrator {
         }
       }
 
-      if (review.verdict === "cascade") {
+      if (stepResult.reviewVerdict === "cascade") {
         const target =
           stepDef.loop?.target ?? (i > 0 ? order[i - 1] : order[0]);
         if (
@@ -1002,7 +690,7 @@ export class LoopOrchestrator {
         }
       }
 
-      if (stepDef.gate && review.verdict === "pass") {
+      if (stepDef.gate && stepResult.reviewVerdict === "pass") {
         this.machine.transitionStep(run, stepId, "in_review");
         event("progress", stepId, "Awaiting human review...");
         decision(
@@ -1022,7 +710,7 @@ export class LoopOrchestrator {
           }
           this.machine.transitionStep(run, stepId, "approved");
         }
-      } else if (review.verdict === "pass") {
+      } else if (stepResult.reviewVerdict === "pass") {
         this.machine.transitionStep(run, stepId, "approved");
       } else {
         this.machine.transitionStep(run, stepId, "failed");
