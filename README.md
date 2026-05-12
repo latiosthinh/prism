@@ -22,7 +22,9 @@ PRISM is a multi-provider AI development orchestration engine that transforms ra
 | Review | Manual | Human-in-the-loop gates |
 | Artifacts | Lost in chat | Markdown files, git-tracked |
 | Reproducibility | None | Replay any run, resume from any step |
-| Audit Trail | None | Append-only decision log |
+| Audit Trail | None | Append-only decision log + SHA-256 |
+| Cost Tracking | Hidden | Per-step token/cost breakdown |
+| Budget Control | None | Hard limits with pre-flight estimation |
 
 ---
 
@@ -80,7 +82,8 @@ Every agent writes to Markdown files. Code goes in source files. Artifacts are t
 │   │   ├── latest.md
 │   │   └── archive/
 │   │       └── rev-1.md
-└── events.jsonl            # Append-only event log
+├── decisions.jsonl         # Append-only audit log
+└── events.jsonl            # Append-only event log (replay)
 ```
 
 ---
@@ -139,11 +142,13 @@ See the [CLI section](#-prism-cli) below for full details.
 │  ┌────────────────────────────────────────────────┐  │
 │  │              React Panel UI                     │  │
 │  │  DAG Canvas • Live Stream • Decision Log       │  │
+│  │  Timeline • Cost Breakdown • Audit View        │  │
 │  └────────────────────────────────────────────────┘  │
 │                        ↓                              │
 │  ┌────────────────────────────────────────────────┐  │
 │  │              Engine Bridge                      │  │
 │  │  Pipeline Loader • State Machine • Orchestrator│  │
+│  │  Audit Watcher (fs.watch + 150ms debounce)     │  │
 │  └────────────────────────────────────────────────┘  │
 │                        ↓                              │
 │  ┌────────────────────────────────────────────────┐  │
@@ -152,6 +157,12 @@ See the [CLI section](#-prism-cli) below for full details.
 │  │  │ Cursor   │   Pi     │   Anthropic        │  │  │
 │  │  │ SDK      │   SDK    │   SDK              │  │  │
 │  │  └──────────┴──────────┴────────────────────┘  │  │
+│  └────────────────────────────────────────────────┘  │
+│                        ↓                              │
+│  ┌────────────────────────────────────────────────┐  │
+│  │              Observability Layer                │  │
+│  │  Token Tracking • Budget Enforcement           │  │
+│  │  Audit Log (decisions.jsonl) • Export (MD/CSV) │  │
 │  └────────────────────────────────────────────────┘  │
 └──────────────────────────────────────────────────────┘
 ```
@@ -185,12 +196,28 @@ prism/                    # VS Code Extension
       runner/
         step-runner.ts    # Cursor + Anthropic runners
         pi-sdk-runner.ts  # Pi SDK runner with tool execution
+        step-executor.ts  # Extracted step execution (shared logic)
       agents/             # 12 built-in AI agents
       errors/             # Human-readable error messages
+      audit/
+        audit-writer.ts   # Append-only JSONL writer
+        audit-events.ts   # Event type definitions
+        exporters/
+          markdown.ts     # Compliance report (MD)
+          csv.ts          # Step-level CSV export
+      telemetry.ts        # Token/cost tracking + COST_TABLE
     extension/
-      engine-bridge.ts    # Multi-backend factory
+      engine-bridge.ts    # Multi-backend factory + AuditWatcher
       templates/          # Pipeline YAML templates
-    panel/                # React UI components
+    panel/
+      components/
+        ObservabilityPanel.tsx  # Tabbed dashboard
+        Timeline.tsx            # DAG timeline view
+        CostBreakdown.tsx       # Cost by step/provider
+        AuditLogView.tsx        # Event log viewer
+        BudgetMeter.tsx         # Budget progress bar
+      hooks/
+        useExtensionState.ts    # Panel state + message protocol
   schemas/
     pipeline-schema.json  # JSON Schema for YAML validation
 ```
@@ -561,6 +588,17 @@ c9f2fb7 feat(ci): add GitHub Actions CI and release workflows
 # v0.2 — Security
 6d26b52 feat(security): enforce allowedCommands in pi-sdk bash tool
 68766fa feat(security): migrate API keys to VS Code SecretStorage
+
+# v0.3 — Observability
+d34308d feat(observability): hook export commands to VS Code save dialogs
+2293157 feat(observability): add AuditWatcher with fs.watch for live streaming
+62d2fb1 feat(observability): wire ObservabilityPanel into Pipeline view
+685a40e refactor(orchestrator): extract step execution into StepExecutor
+1a9d6f4 feat(observability): System 6 — panel wiring
+4852c0c feat(observability): System 5 — export formats
+929c7ae feat(observability): System 4 — audit log (decisions.jsonl)
+ae6c7c3 feat(observability): System 3 — timeline DAG view
+6b31bcc feat(observability): System 2 — budget enforcement
 ```
 
 ---
@@ -596,6 +634,133 @@ c9f2fb7 feat(ci): add GitHub Actions CI and release workflows
 
 ---
 
+## 🔍 Observability Systems
+
+PRISM v0.3 adds comprehensive observability — track costs, enforce budgets, visualize timelines, audit decisions, and export compliance reports.
+
+### System 1: Token & Cost Tracking
+
+Every step records token usage and computed cost automatically.
+
+```yaml
+# Step state now includes:
+{
+  "tokensIn": 12450,
+  "tokensOut": 3200,
+  "tokensCachedIn": 8900,
+  "costUsd": 0.0847,
+  "provider": "anthropic",
+  "startedAtMs": 1715500000000,
+  "completedAtMs": 1715500045000
+}
+```
+
+Built-in cost table covers all major providers (Anthropic, OpenAI, Google, Mistral, Groq, etc.). Costs are computed from token counts using current pricing.
+
+### System 2: Budget Enforcement
+
+Set a budget on any pipeline. PRISM estimates step costs before execution and aborts if the budget would be exceeded.
+
+```yaml
+name: feature-build
+budget_usd: 5.00        # Hard limit — run aborts if exceeded
+budget_warn_pct: 80     # Warning at 80% ($4.00)
+```
+
+- **Pre-flight estimation** — checks remaining budget before each step/group
+- **Parallel group awareness** — estimates total cost of parallel steps before launching
+- **Graceful abort** — throws `PrismBudgetError` with spent vs. budget details
+
+### System 3: Timeline DAG View
+
+Visual timeline showing step execution order, duration, and overlap.
+
+```
+Timeline
+─────────────────────────────────────────────
+design      [████████████████]  12.4s  $0.08
+implement   [████████████████████████]  28.1s  $0.12
+review      [████████]  6.2s  $0.05
+```
+
+- **Sequential mode** — steps shown in execution order
+- **Parallel mode** — overlapping bars for concurrent steps
+- **Color-coded status** — green (pass), red (fail), yellow (gate pending)
+
+### System 4: Audit Log
+
+Append-only `decisions.jsonl` file records every significant event in a run.
+
+```jsonl
+{"type":"run_start","runId":"abc-123","ts":1715500000000,"pipeline":"feature-build","stepCount":5,"budgetUsd":5.0}
+{"type":"step_start","runId":"abc-123","ts":1715500001000,"stepId":"design","agent":"architect","model":"claude-sonnet-4-20250514"}
+{"type":"step_done","runId":"abc-123","ts":1715500013400,"stepId":"design","tokensIn":12450,"tokensOut":3200,"costUsd":0.0847,"durationMs":12400}
+{"type":"budget_warn","runId":"abc-123","ts":1715500050000,"spentUsd":4.12,"budgetUsd":5.0,"pct":82.4}
+{"type":"run_done","runId":"abc-123","ts":1715500095000,"totalCost":4.87,"totalTokens":45200,"durationMs":95000,"exitStatus":"completed"}
+```
+
+- **Separate from replay log** — `decisions.jsonl` (audit) vs `events.jsonl` (replay)
+- **SHA-256 integrity hash** — verify audit log hasn't been tampered with
+- **Event taxonomy** — `run_start`, `run_done`, `step_start`, `step_done`, `step_failed`, `step_skipped`, `budget_warn`, `budget_exceeded`, `auto_review_pass`, `auto_review_fail`, `user_note`
+
+### System 5: Export Formats
+
+Export audit logs for compliance, billing, or post-mortem analysis.
+
+**Markdown Report:**
+```markdown
+# PRISM Run Report
+
+## Summary
+| Field | Value |
+|---|---|
+| Run ID | `abc-123` |
+| Pipeline | feature-build |
+| Duration | 1m 35s |
+| Total Cost | $4.870000 |
+| Budget | $5.00 |
+| Budget Consumed | 97.4% |
+| Status | completed |
+
+## Step Summary
+| Step | Agent | Model | Duration | Tokens | Cost | Status |
+|---|---|---|---|---|---|---|
+| design | architect | claude-sonnet-4-20250514 | 12s | 15,650 | $0.084700 | done |
+```
+
+**CSV Export:**
+```csv
+run_id,pipeline,step_id,agent,model,provider,started_at_iso,completed_at_iso,duration_ms,tokens_in,tokens_out,tokens_cached,cost_usd,status,artifact_path
+abc-123,feature-build,design,architect,claude-sonnet-4-20250514,anthropic,2026-05-12T03:00:01.000Z,2026-05-12T03:00:13.400Z,12400,12450,3200,8900,0.084700,done,.PRISM/runs/abc-123/steps/design/latest.md
+```
+
+- **VS Code save dialog** — choose filename and location
+- **CLI export** — `prism export --format md` or `prism export --format csv`
+
+### System 6: Observability Panel
+
+Tabbed dashboard in the VS Code panel with live updates.
+
+```
+┌─────────────────────────────────────────────┐
+│ [Timeline] [Cost] [Audit]     [Export MD]   │
+├─────────────────────────────────────────────┤
+│ Budget: ████████████░░░░  97.4% ($4.87/$5) │
+├─────────────────────────────────────────────┤
+│ Timeline:                                   │
+│   design      [████████████]  12.4s  $0.08  │
+│   implement   [██████████████████]  28.1s   │
+│   review      [████████]  6.2s  $0.05       │
+└─────────────────────────────────────────────┘
+```
+
+- **Live streaming** — `fs.watch` on `decisions.jsonl` with 150ms debounce
+- **Three tabs** — Timeline (DAG view), Cost (breakdown by step/provider), Audit (event log)
+- **Budget meter** — visual progress bar with warning colors
+- **Export buttons** — one-click Markdown or CSV export
+
+---
+
 ## 📖 Documentation
 
 - [Contributing Guide](CONTRIBUTING.md) — dev setup, coding conventions, PR process
@@ -609,12 +774,13 @@ c9f2fb7 feat(ci): add GitHub Actions CI and release workflows
 
 1. **Multi-Provider** — Don't lock into one AI. Use the best model for each step.
 2. **Structured** — No more lost context in chat. Every step produces artifacts.
-3. **Auditable** — Every decision logged, every artifact tracked in git.
+3. **Auditable** — Every decision logged, every artifact tracked in git. Append-only audit trails with SHA-256 integrity.
 4. **Reproducible** — Replay any run. Resume from any step. Retry with backoff.
 5. **Extensible** — Custom agents, custom skills, custom pipelines.
 6. **Open** — MIT licensed. No vendor lock-in. 30+ providers.
 7. **CLI + IDE** — Use it in VS Code or from your terminal. Interactive REPL with slash commands.
 8. **Secure** — API keys in encrypted SecretStorage. Command allowlist enforcement.
+9. **Observable** — Track token costs, enforce budgets, visualize timelines, export compliance reports.
 
 ---
 
