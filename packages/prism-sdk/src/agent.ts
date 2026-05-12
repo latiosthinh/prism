@@ -91,13 +91,30 @@ export class OpenCodeAgent {
       const lastMessage = this.agent.state.messages[this.agent.state.messages.length - 1];
       const duration = Date.now() - startTime;
 
+      let inputTokens = 0;
+      let outputTokens = 0;
+
+      const lastMsg = lastMessage as any;
+      if (lastMsg?.usage) {
+        inputTokens = lastMsg.usage.input_tokens ?? lastMsg.usage.prompt_tokens ?? 0;
+        outputTokens = lastMsg.usage.output_tokens ?? lastMsg.usage.completion_tokens ?? 0;
+      }
+
+      if (lastMsg?.meta?.tokens) {
+        inputTokens = inputTokens || lastMsg.meta.tokens.input ?? lastMsg.meta.tokens.prompt ?? 0;
+        outputTokens = outputTokens || lastMsg.meta.tokens.output ?? lastMsg.meta.tokens.completion ?? 0;
+      }
+
+      const costPerMillion = this.config.provider === "anthropic" ? 15.0 : 3.0;
+      const totalCost = (inputTokens + outputTokens) * costPerMillion / 1_000_000;
+
       const result: OpenCodeAgentResult = {
         message: lastMessage as unknown as AssistantMessage,
         duration,
         usage: {
-          input: 0,
-          output: 0,
-          cost: { total: 0 },
+          input: inputTokens,
+          output: outputTokens,
+          cost: { total: totalCost },
         },
       };
 

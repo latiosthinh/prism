@@ -65,6 +65,7 @@ export const StepDefinitionSchema = z.object({
     .optional(),
   mcp_servers: z.array(z.string()).default([]),
   context_files: z.array(z.string()).default([]),
+  budget_usd: z.number().min(0).optional(),
 });
 export type StepDefinition = z.infer<typeof StepDefinitionSchema>;
 
@@ -91,6 +92,8 @@ export const PipelineDefinitionSchema = z.object({
   steps: z.array(StepDefinitionSchema).min(1),
   agents: z.array(AgentDefinitionSchema).default([]),
   loop_groups: z.array(LoopGroupSchema).default([]),
+  budget_usd: z.number().min(0).default(0),
+  budget_warn_pct: z.number().min(0).max(100).default(80),
 });
 export type PipelineDefinition = z.infer<typeof PipelineDefinitionSchema>;
 
@@ -134,6 +137,8 @@ export interface StepRunState {
   status: StepStatus;
   startedAt?: string;
   completedAt?: string;
+  startedAtMs?: number;
+  completedAtMs?: number;
   attempts: number;
   artifactPath?: string;
   outputArtifact?: string;
@@ -144,6 +149,11 @@ export interface StepRunState {
   retriesRemaining: number;
   modelUsed: string;
   agentLabel: string;
+  tokensIn: number;
+  tokensOut: number;
+  tokensCachedIn: number;
+  costUsd: number;
+  provider: string;
 }
 
 export type RunStatus =
@@ -242,6 +252,16 @@ export interface AgentEvent {
 export interface ArtifactData {
   frontmatter: Record<string, unknown>;
   body: string;
+}
+
+export interface StepRunResult {
+  text: string;
+  tokensIn: number;
+  tokensOut: number;
+  tokensCachedIn: number;
+  costUsd: number;
+  provider: string;
+  model: string;
 }
 
 // ───────────────────────── Tasks ─────────────────────────

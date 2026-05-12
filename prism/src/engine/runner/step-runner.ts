@@ -5,6 +5,7 @@ import {
   AgentContext,
   AgentEvent,
   AgentEventType,
+  StepRunResult,
 } from "../pipeline/schema.js";
 
 export interface RunnerOptions {
@@ -18,7 +19,7 @@ export interface StepRunner {
     step: StepDefinition,
     context: AgentContext,
     opts: RunnerOptions,
-  ): Promise<string>;
+  ): Promise<StepRunResult>;
 }
 
 interface ToolCallRecord {
@@ -299,8 +300,6 @@ export class CursorSdkStepRunner implements StepRunner {
       runResult?.status === "error" ||
       runResult?.status === "cancelled"
     ) {
-      // If the agent run died nearly instantly with an "agent error"-shaped
-      // failure, remember the model so the next retry uses "default".
       const errMsgCombined = streamError ?? "";
       const looksLikeModelRejection =
         modelId !== "default" &&
@@ -321,7 +320,9 @@ export class CursorSdkStepRunner implements StepRunner {
         artifactPath,
         emit,
       );
-      if (recovered && recovered.trim()) return recovered;
+      if (recovered && recovered.trim()) {
+        return { text: recovered, tokensIn: 0, tokensOut: 0, tokensCachedIn: 0, costUsd: 0, provider: "cursor", model: modelId };
+      }
       throw new Error(
         streamError ??
           `Agent run ended with status '${runResult?.status ?? "unknown"}'`,
@@ -329,14 +330,22 @@ export class CursorSdkStepRunner implements StepRunner {
     }
 
     const streamed = accumulatedText.join("");
-    if (streamed.trim()) return streamed;
+    if (streamed.trim()) {
+      const runUsage = runResult?.usage ?? {};
+      const tokensIn = runUsage.input_tokens ?? runUsage.prompt_tokens ?? 0;
+      const tokensOut = runUsage.output_tokens ?? runUsage.completion_tokens ?? 0;
+      return { text: streamed, tokensIn, tokensOut, tokensCachedIn: 0, costUsd: 0, provider: "cursor", model: modelId };
+    }
 
     if (
       runResult &&
       typeof runResult.result === "string" &&
       runResult.result.trim()
     ) {
-      return runResult.result;
+      const runUsage = runResult?.usage ?? {};
+      const tokensIn = runUsage.input_tokens ?? runUsage.prompt_tokens ?? 0;
+      const tokensOut = runUsage.output_tokens ?? runUsage.completion_tokens ?? 0;
+      return { text: runResult.result, tokensIn, tokensOut, tokensCachedIn: 0, costUsd: 0, provider: "cursor", model: modelId };
     }
 
     const recovered = await this.recoverAgentWrittenFiles(
@@ -346,9 +355,11 @@ export class CursorSdkStepRunner implements StepRunner {
       artifactPath,
       emit,
     );
-    if (recovered && recovered.trim()) return recovered;
+    if (recovered && recovered.trim()) {
+      return { text: recovered, tokensIn: 0, tokensOut: 0, tokensCachedIn: 0, costUsd: 0, provider: "cursor", model: modelId };
+    }
 
-    return "";
+    return { text: "", tokensIn: 0, tokensOut: 0, tokensCachedIn: 0, costUsd: 0, provider: "cursor", model: modelId };
   }
 
   private buildPrompt(step: StepDefinition, context: AgentContext): string {
@@ -587,8 +598,13 @@ export class AnthropicStepRunner implements StepRunner {
       .map((b: any) => b.text)
       .join("");
 
+    const usage = message.usage ?? {};
+    const tokensIn = usage.input_tokens ?? 0;
+    const tokensOut = usage.output_tokens ?? 0;
+    const tokensCachedIn = usage.cache_read_input_tokens ?? 0;
+
     emit("done", `"${step.name}" complete`);
-    return text;
+    return { text, tokensIn, tokensOut, tokensCachedIn, costUsd: 0, provider: "anthropic", model: this.model };
   }
 
   private buildPrompt(step: StepDefinition, context: AgentContext): string {

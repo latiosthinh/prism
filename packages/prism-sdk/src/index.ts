@@ -33,3 +33,19 @@ export type { FileContext, CodebaseContext } from './context-builder.js';
 
 export { McpClientManager, parseMcpServersFromPipeline } from './mcp-client.js';
 export type { McpServerConfig, McpTool, McpResource, McpToolCallResult } from './mcp-client.js';
+
+export {
+  computeCost,
+  extractUsage,
+  totalCost,
+  totalTokens,
+  durationMs,
+  getRate,
+  updateRate,
+} from './telemetry.js';
+export type {
+  StepTelemetry,
+  RunTelemetry,
+  TelemetryStatus,
+  CostRate,
+} from './telemetry.js';

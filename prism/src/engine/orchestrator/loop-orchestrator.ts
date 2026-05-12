@@ -282,6 +282,7 @@ export class LoopOrchestrator {
         stepState.revision++;
         this.machine.transitionStep(run, stepId, "running");
       }
+      stepState.startedAtMs = Date.now();
 
       return this.executeSingleStep(
         stepId,
@@ -378,6 +379,13 @@ export class LoopOrchestrator {
         { cwd, onEvent, signal },
       );
 
+      stepState.tokensIn = result.tokensIn;
+      stepState.tokensOut = result.tokensOut;
+      stepState.tokensCachedIn = result.tokensCachedIn;
+      stepState.costUsd = result.costUsd;
+      stepState.provider = result.provider;
+      stepState.completedAtMs = Date.now();
+
       const artifactDir = path.join(
         cwd,
         ".PRISM",
@@ -388,12 +396,12 @@ export class LoopOrchestrator {
       );
       try {
         fs.mkdirSync(artifactDir, { recursive: true });
-        fs.writeFileSync(path.join(artifactDir, "latest.md"), result, "utf8");
+        fs.writeFileSync(path.join(artifactDir, "latest.md"), result.text, "utf8");
         const archiveDir = path.join(artifactDir, "archive");
         fs.mkdirSync(archiveDir, { recursive: true });
         fs.writeFileSync(
           path.join(archiveDir, `rev-${stepState.revision}.md`),
-          result,
+          result.text,
           "utf8",
         );
         stepState.outputArtifact = path
@@ -411,7 +419,7 @@ export class LoopOrchestrator {
       const review = await this.reviewer.review(
         stepId,
         stepState,
-        result,
+        result.text,
         undefined,
         undefined,
         stepDef.tags,
@@ -592,6 +600,7 @@ export class LoopOrchestrator {
         stepState.revision++;
         this.machine.transitionStep(run, stepId, "running");
       }
+      stepState.startedAtMs = Date.now();
 
       if (stepDef.loop?.mode === "task") {
         const tasks = this.parseTasks(run);
@@ -680,7 +689,7 @@ export class LoopOrchestrator {
         }
       }
 
-      let result: string;
+      let result: Awaited<ReturnType<typeof runner.run>>;
       try {
         result = await runner.run(
           stepDef,
@@ -693,6 +702,13 @@ export class LoopOrchestrator {
           },
           { cwd, onEvent, signal },
         );
+
+        stepState.tokensIn = result.tokensIn;
+        stepState.tokensOut = result.tokensOut;
+        stepState.tokensCachedIn = result.tokensCachedIn;
+        stepState.costUsd = result.costUsd;
+        stepState.provider = result.provider;
+        stepState.completedAtMs = Date.now();
       } catch (err: any) {
         const errMsg = err?.message ?? String(err);
         event("error", stepId, `Runner failed: ${errMsg}`);
@@ -741,12 +757,12 @@ export class LoopOrchestrator {
       );
       try {
         fs.mkdirSync(artifactDir, { recursive: true });
-        fs.writeFileSync(path.join(artifactDir, "latest.md"), result, "utf8");
+        fs.writeFileSync(path.join(artifactDir, "latest.md"), result.text, "utf8");
         const archiveDir = path.join(artifactDir, "archive");
         fs.mkdirSync(archiveDir, { recursive: true });
         fs.writeFileSync(
           path.join(archiveDir, `rev-${stepState.revision}.md`),
-          result,
+          result.text,
           "utf8",
         );
         stepState.outputArtifact = path
@@ -764,7 +780,7 @@ export class LoopOrchestrator {
       const review = await this.reviewer.review(
         stepId,
         stepState,
-        result,
+        result.text,
         undefined,
         undefined,
         stepDef.tags,

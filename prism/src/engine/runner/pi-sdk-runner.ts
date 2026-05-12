@@ -6,8 +6,10 @@ import {
   AgentContext,
   AgentEvent,
   AgentEventType,
+  StepRunResult,
 } from "../pipeline/schema.js";
 import { OpenCodeAgent } from "@prism/sdk";
+import { extractUsage, computeCost } from "@prism/sdk";
 import type { AgentTool } from "@earendil-works/pi-agent-core";
 import { Type } from "@earendil-works/pi-ai";
 
@@ -52,7 +54,7 @@ export class PiSdkStepRunner implements StepRunner {
     step: StepDefinition,
     context: AgentContext,
     opts: RunnerOptions,
-  ): Promise<string> {
+  ): Promise<StepRunResult> {
     const { cwd, onEvent, signal } = opts;
     const emit = (
       type: AgentEventType,
@@ -112,6 +114,7 @@ export class PiSdkStepRunner implements StepRunner {
 
     let accumulatedText = "";
     let streamError: string | null = null;
+    let agentResult: any = null;
 
     agent.on("text_delta", (event: any) => {
       accumulatedText += event.delta || "";
@@ -147,8 +150,9 @@ export class PiSdkStepRunner implements StepRunner {
       emit("error", streamError);
     });
 
-    agent.on("agent_end", () => {
+    agent.on("agent_end", (event: any) => {
       emit("done", "Agent finished");
+      agentResult = event?.result;
     });
 
     try {
@@ -159,6 +163,9 @@ export class PiSdkStepRunner implements StepRunner {
       streamError = msg;
     }
 
+    const usage = extractUsage(this.config.provider, agentResult?.message ?? {});
+    const cost = computeCost(this.config.model, usage.tokensIn, usage.tokensOut, usage.tokensCachedIn);
+
     const artifactPath = path.join(cwd, step.artifact);
 
     if (streamError) {
@@ -168,11 +175,15 @@ export class PiSdkStepRunner implements StepRunner {
         artifactPath,
         emit,
       );
-      if (recovered && recovered.trim()) return recovered;
+      if (recovered && recovered.trim()) {
+        return { text: recovered, tokensIn: usage.tokensIn, tokensOut: usage.tokensOut, tokensCachedIn: usage.tokensCachedIn, costUsd: cost, provider: this.config.provider, model: this.config.model };
+      }
       throw new Error(streamError);
     }
 
-    if (accumulatedText.trim()) return accumulatedText;
+    if (accumulatedText.trim()) {
+      return { text: accumulatedText, tokensIn: usage.tokensIn, tokensOut: usage.tokensOut, tokensCachedIn: usage.tokensCachedIn, costUsd: cost, provider: this.config.provider, model: this.config.model };
+    }
 
     const recovered = await this.recoverAgentWrittenFiles(
       cwd,
@@ -180,9 +191,11 @@ export class PiSdkStepRunner implements StepRunner {
       artifactPath,
       emit,
     );
-    if (recovered && recovered.trim()) return recovered;
+    if (recovered && recovered.trim()) {
+      return { text: recovered, tokensIn: usage.tokensIn, tokensOut: usage.tokensOut, tokensCachedIn: usage.tokensCachedIn, costUsd: cost, provider: this.config.provider, model: this.config.model };
+    }
 
-    return "";
+    return { text: "", tokensIn: usage.tokensIn, tokensOut: usage.tokensOut, tokensCachedIn: usage.tokensCachedIn, costUsd: cost, provider: this.config.provider, model: this.config.model };
   }
 
   private buildPrompt(step: StepDefinition, context: AgentContext): string {
