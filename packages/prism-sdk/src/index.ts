@@ -18,7 +18,7 @@ export type {
   UserMessage,
   ToolResultMessage,
   Message,
-  StreamEvent,
+  AssistantMessageEvent,
   Model,
 } from '@earendil-works/pi-ai';
 

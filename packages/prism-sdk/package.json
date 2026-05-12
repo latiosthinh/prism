@@ -1,7 +1,7 @@
 {
   "name": "@prism/sdk",
   "version": "0.1.0",
-  "description": "PRISM SDK - Unified LLM and Agent runtime wrapping pi-ai and pi-agent-core",
+  "description": "PRISM SDK — Unified LLM and Agent runtime wrapping pi-ai and pi-agent-core",
   "main": "./dist/index.js",
   "module": "./dist/index.mjs",
   "types": "./dist/index.d.ts",
@@ -30,5 +30,27 @@
     "typescript": "^5.7.0",
     "vitest": "^2.1.0"
   },
-  "license": "MIT"
+  "keywords": [
+    "ai",
+    "llm",
+    "agent",
+    "multi-provider",
+    "anthropic",
+    "openai",
+    "prism"
+  ],
+  "author": "latiosthinh",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/latiosthinh/prism",
+    "directory": "packages/prism-sdk"
+  },
+  "bugs": {
+    "url": "https://github.com/latiosthinh/prism/issues"
+  },
+  "homepage": "https://github.com/latiosthinh/prism#readme",
+  "publishConfig": {
+    "access": "public"
+  }
 }

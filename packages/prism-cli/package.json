@@ -1,13 +1,15 @@
 {
   "name": "@prism/cli",
   "version": "0.2.0",
-  "description": "PRISM CLI — Interactive pipeline agent with slash commands",
+  "description": "PRISM CLI — Interactive AI pipeline agent with slash commands",
   "type": "module",
   "bin": {
     "prism": "./dist/index.js"
   },
   "main": "./dist/index.js",
-  "types": "./dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
   "scripts": {
     "build": "tsup",
     "dev": "tsup --watch",
@@ -16,11 +18,10 @@
     "test": "vitest"
   },
   "dependencies": {
-    "@prism/sdk": "file:../prism-sdk",
+    "@prism/sdk": "^0.1.0",
     "chalk": "^5.3.0",
     "commander": "^12.1.0",
     "ora": "^8.1.0",
-    "readline": "^1.3.0",
     "yaml": "^2.7.0",
     "zod": "^3.25.76"
   },
@@ -29,5 +30,28 @@
     "tsup": "^8.3.0",
     "typescript": "^5.7.0",
     "vitest": "^2.1.0"
+  },
+  "keywords": [
+    "ai",
+    "pipeline",
+    "cli",
+    "multi-agent",
+    "sdlc",
+    "orchestration",
+    "prism"
+  ],
+  "author": "latiosthinh",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/latiosthinh/prism",
+    "directory": "packages/prism-cli"
+  },
+  "bugs": {
+    "url": "https://github.com/latiosthinh/prism/issues"
+  },
+  "homepage": "https://github.com/latiosthinh/prism#readme",
+  "publishConfig": {
+    "access": "public"
   }
 }

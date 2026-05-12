@@ -1,4 +1,4 @@
-import type { Model, Context, Tool, StreamEvent, AssistantMessage } from '@earendil-works/pi-ai';
+import type { Model, Context, Tool, AssistantMessage } from '@earendil-works/pi-ai';
 import {
   getModel as piGetModel,
   stream as piStream,

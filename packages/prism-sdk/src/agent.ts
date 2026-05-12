@@ -101,8 +101,8 @@ export class OpenCodeAgent {
       }
 
       if (lastMsg?.meta?.tokens) {
-        inputTokens = inputTokens || lastMsg.meta.tokens.input ?? lastMsg.meta.tokens.prompt ?? 0;
-        outputTokens = outputTokens || lastMsg.meta.tokens.output ?? lastMsg.meta.tokens.completion ?? 0;
+        inputTokens = inputTokens || (lastMsg.meta.tokens.input ?? lastMsg.meta.tokens.prompt ?? 0);
+        outputTokens = outputTokens || (lastMsg.meta.tokens.output ?? lastMsg.meta.tokens.completion ?? 0);
       }
 
       const costPerMillion = this.config.provider === "anthropic" ? 15.0 : 3.0;
