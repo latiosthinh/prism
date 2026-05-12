@@ -21,6 +21,17 @@ import { PipelineValidator } from "../pipeline/validator.js";
 import { SkillLoader } from "../artifacts/skill-loader.js";
 import { evaluateCondition } from "../pipeline/conditions.js";
 import { PrismBudgetError } from "../errors/budget-error.js";
+import { appendAudit, ensureRunDir } from "../audit/audit-writer.js";
+import type {
+  RunStartEvent,
+  RunDoneEvent,
+  StepStartEvent,
+  StepDoneEvent,
+  StepFailedEvent,
+  StepSkippedEvent,
+  BudgetWarnEvent,
+  BudgetExceededEvent,
+} from "../audit/audit-events.js";
 
 export interface OrchestratorConfig {
   cwd: string;
@@ -145,6 +156,20 @@ export class LoopOrchestrator {
     if (this.machine.allStepsComplete(run, order)) {
       this.machine.setRunStatus(run, "completed");
       decision("run_completed", `Pipeline "${pipeline.name}" completed`);
+      const runDir = path.join(config.cwd, ".PRISM", "runs", run.runId);
+      const totalCost = this.totalRunCost(run);
+      const totalTokens = Object.values(run.steps).reduce((sum, s) => sum + (s.tokensIn ?? 0) + (s.tokensOut ?? 0), 0);
+      const duration = run.completedAt ? new Date(run.completedAt).getTime() - new Date(run.startedAt).getTime() : Date.now() - new Date(run.startedAt).getTime();
+      const runDoneEvent: RunDoneEvent = {
+        type: "run_done",
+        runId: run.runId,
+        ts: Date.now(),
+        totalCost,
+        totalTokens,
+        durationMs: duration,
+        exitStatus: "completed",
+      };
+      appendAudit(runDir, runDoneEvent);
     } else {
       this.machine.setRunStatus(run, "paused");
       decision("run_paused", `Pipeline "${pipeline.name}" paused`);
@@ -167,7 +192,8 @@ export class LoopOrchestrator {
     event: (type: AgentEvent["type"], stepId: string, content: string, meta?: Record<string, unknown>) => void,
     resumeFromStep?: string,
   ): Promise<void> {
-    const { signal } = config;
+    const { signal, cwd } = config;
+    const runDir = path.join(cwd, ".PRISM", "runs", run.runId);
     const groups = this.validator.findParallelGroups(pipeline);
 
     let resumeGroupIdx = 0;
@@ -197,7 +223,7 @@ export class LoopOrchestrator {
 
       const warnEmitted = { value: false };
       try {
-        this.checkBudget(run, pipeline, decision, warnEmitted);
+        this.checkBudget(run, pipeline, runDir, decision, warnEmitted);
       } catch (err) {
         if (err instanceof PrismBudgetError) {
           this.machine.setRunStatus(run, "failed");
@@ -450,6 +476,21 @@ export class LoopOrchestrator {
         );
       }
 
+      const duration = stepState.completedAtMs ? stepState.completedAtMs - (stepState.startedAtMs ?? 0) : 0;
+      const stepDoneEvent: StepDoneEvent = {
+        type: "step_done",
+        runId: run.runId,
+        ts: Date.now(),
+        stepId,
+        tokensIn: stepState.tokensIn,
+        tokensOut: stepState.tokensOut,
+        tokensCached: stepState.tokensCachedIn,
+        costUsd: stepState.costUsd,
+        durationMs: duration,
+        artifactPath: stepState.outputArtifact ?? "",
+      };
+      appendAudit(runDir, stepDoneEvent);
+
       const review = await this.reviewer.review(
         stepId,
         stepState,
@@ -573,6 +614,19 @@ export class LoopOrchestrator {
       `Pipeline "${pipeline.name}" started (${order.length} steps)`,
     );
 
+    const runDir = path.join(cwd, ".PRISM", "runs", run.runId);
+    ensureRunDir(runDir);
+    const runStartEvent: RunStartEvent = {
+      type: "run_start",
+      runId: run.runId,
+      ts: Date.now(),
+      pipeline: pipeline.name,
+      stepCount: order.length,
+      budgetUsd: pipeline.budget_usd ?? 0,
+      userIdentity: "local",
+    };
+    appendAudit(runDir, runStartEvent);
+
     let resumeIdx = 0;
     if (resumeFromStep) {
       const idx = order.indexOf(resumeFromStep);
@@ -602,7 +656,7 @@ export class LoopOrchestrator {
       }
 
       try {
-        this.checkBudget(run, pipeline, decision, warnEmitted);
+        this.checkBudget(run, pipeline, runDir, decision, warnEmitted);
       } catch (err) {
         if (err instanceof PrismBudgetError) {
           this.machine.setRunStatus(run, "failed");
@@ -633,6 +687,14 @@ export class LoopOrchestrator {
         if (!shouldRun) {
           this.machine.transitionStep(run, stepId, "skipped");
           decision("step_skipped", `Step "${stepDef.name}" skipped by condition`, undefined, stepId);
+          const skipEvent: StepSkippedEvent = {
+            type: "step_skipped",
+            runId: run.runId,
+            ts: Date.now(),
+            stepId,
+            condition: stepDef.condition!,
+          };
+          appendAudit(runDir, skipEvent);
           i++;
           continue;
         }
@@ -646,6 +708,18 @@ export class LoopOrchestrator {
         this.machine.transitionStep(run, stepId, "running");
       }
       stepState.startedAtMs = Date.now();
+
+      const stepStartEvent: StepStartEvent = {
+        type: "step_start",
+        runId: run.runId,
+        ts: Date.now(),
+        stepId,
+        agent: stepDef.agent,
+        model: stepDef.model,
+        provider: "pi",
+        inputSummary: (context.idea ?? "").slice(0, 100),
+      };
+      appendAudit(runDir, stepStartEvent);
 
       if (stepDef.loop?.mode === "task") {
         const tasks = this.parseTasks(run);
@@ -821,6 +895,21 @@ export class LoopOrchestrator {
           `Failed to write artifact: ${err?.message ?? err}`,
         );
       }
+
+      const duration = stepState.completedAtMs ? stepState.completedAtMs - (stepState.startedAtMs ?? 0) : 0;
+      const stepDoneEvent: StepDoneEvent = {
+        type: "step_done",
+        runId: run.runId,
+        ts: Date.now(),
+        stepId,
+        tokensIn: stepState.tokensIn,
+        tokensOut: stepState.tokensOut,
+        tokensCached: stepState.tokensCachedIn,
+        costUsd: stepState.costUsd,
+        durationMs: duration,
+        artifactPath: stepState.outputArtifact ?? "",
+      };
+      appendAudit(runDir, stepDoneEvent);
 
       const review = await this.reviewer.review(
         stepId,
@@ -1077,6 +1166,7 @@ export class LoopOrchestrator {
   private checkBudget(
     run: PipelineRunState,
     pipeline: PipelineDefinition,
+    runDir: string,
     decision: (type: Decision["type"], summary: string, detail?: string, stepId?: string) => void,
     warnEmitted: { value: boolean },
   ): void {
@@ -1088,6 +1178,14 @@ export class LoopOrchestrator {
     const remaining = budgetUsd - spent;
 
     if (spent >= budgetUsd) {
+      const budgetExceededEvent: BudgetExceededEvent = {
+        type: "budget_exceeded",
+        runId: run.runId,
+        ts: Date.now(),
+        spentUsd: spent,
+        budgetUsd,
+      };
+      appendAudit(runDir, budgetExceededEvent);
       decision(
         "run_failed",
         `Budget exceeded: spent $${spent.toFixed(4)} of $${budgetUsd.toFixed(2)} budget`,
@@ -1102,6 +1200,15 @@ export class LoopOrchestrator {
 
     if (!warnEmitted.value && spent >= budgetUsd * warnPct) {
       warnEmitted.value = true;
+      const budgetWarnEvent: BudgetWarnEvent = {
+        type: "budget_warn",
+        runId: run.runId,
+        ts: Date.now(),
+        spentUsd: spent,
+        budgetUsd,
+        pct: (spent / budgetUsd) * 100,
+      };
+      appendAudit(runDir, budgetWarnEvent);
       decision(
         "user_note",
         `Budget warning: spent $${spent.toFixed(4)} of $${budgetUsd.toFixed(2)} (${((spent / budgetUsd) * 100).toFixed(0)}%)`,
