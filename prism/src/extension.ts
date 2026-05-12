@@ -621,6 +621,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         const friendly = formatErrorMessage(error);
         vscode.window.showErrorMessage(`PRISM: ${friendly}`);
       },
+      onAuditEvent: (event: any) => {
+        panel?.postMessage({ type: "audit_event", event });
+      },
+      onTelemetryUpdate: (update: any) => {
+        panel?.postMessage({ type: "telemetry_update", ...update });
+      },
     },
     log,
   );

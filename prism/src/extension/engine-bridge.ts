@@ -81,6 +81,136 @@ export interface BridgeLogger {
   show?(): void;
 }
 
+export interface TelemetryUpdate {
+  steps: Array<{
+    stepId: string;
+    stepName: string;
+    agent: string;
+    model: string;
+    provider: string;
+    tokensIn: number;
+    tokensOut: number;
+    tokensCachedIn: number;
+    costUsd: number;
+    startedAtMs: number;
+    completedAtMs: number;
+    status: string;
+  }>;
+  budgetUsd: number;
+}
+
+export class AuditWatcher {
+  private _watcher: fs.FSWatcher | null = null;
+  private _debounceTimer: NodeJS.Timeout | null = null;
+  private _lastSize = 0;
+  private _runDir: string | null = null;
+
+  constructor(
+    private readonly _onAuditEvent: (event: any) => void,
+    private readonly _onTelemetryUpdate: (update: TelemetryUpdate) => void,
+    private readonly _debounceMs = 150,
+  ) {}
+
+  start(runDir: string): void {
+    this.stop();
+    this._runDir = runDir;
+    this._lastSize = 0;
+
+    const auditFile = path.join(runDir, "decisions.jsonl");
+    if (!fs.existsSync(auditFile)) {
+      fs.writeFileSync(auditFile, "", "utf8");
+    }
+
+    try {
+      this._watcher = fs.watch(auditFile, { persistent: false }, () => {
+        this._scheduleRead(auditFile);
+      });
+      this._lastSize = fs.statSync(auditFile).size;
+    } catch {
+      // fs.watch may fail on some platforms; gracefully degrade
+    }
+  }
+
+  stop(): void {
+    if (this._debounceTimer) {
+      clearTimeout(this._debounceTimer);
+      this._debounceTimer = null;
+    }
+    if (this._watcher) {
+      this._watcher.close();
+      this._watcher = null;
+    }
+    this._runDir = null;
+  }
+
+  private _scheduleRead(auditFile: string): void {
+    if (this._debounceTimer) clearTimeout(this._debounceTimer);
+    this._debounceTimer = setTimeout(() => {
+      this._readNewEvents(auditFile);
+    }, this._debounceMs);
+  }
+
+  private _readNewEvents(auditFile: string): void {
+    try {
+      const stat = fs.statSync(auditFile);
+      if (stat.size <= this._lastSize) return;
+
+      const fd = fs.openSync(auditFile, "r");
+      const buffer = Buffer.alloc(stat.size - this._lastSize);
+      fs.readSync(fd, buffer, 0, buffer.length, this._lastSize);
+      fs.closeSync(fd);
+
+      const newContent = buffer.toString("utf8");
+      this._lastSize = stat.size;
+
+      const lines = newContent.split("\n").filter((l) => l.trim());
+      for (const line of lines) {
+        try {
+          const event = JSON.parse(line);
+          this._onAuditEvent(event);
+        } catch {
+          // skip malformed lines
+        }
+      }
+
+      this._sendTelemetryUpdate();
+    } catch {
+      // ignore read errors
+    }
+  }
+
+  private _sendTelemetryUpdate(): void {
+    if (!this._runDir) return;
+    try {
+      const stateFile = path.join(this._runDir, "state.json");
+      if (!fs.existsSync(stateFile)) return;
+
+      const state = JSON.parse(fs.readFileSync(stateFile, "utf8"));
+      const steps = Object.values(state.steps || {}).map((s: any) => ({
+        stepId: s.id,
+        stepName: s.name,
+        agent: s.agent,
+        model: s.model,
+        provider: s.provider ?? "",
+        tokensIn: s.tokensIn ?? 0,
+        tokensOut: s.tokensOut ?? 0,
+        tokensCachedIn: s.tokensCachedIn ?? 0,
+        costUsd: s.costUsd ?? 0,
+        startedAtMs: s.startedAtMs ?? 0,
+        completedAtMs: s.completedAtMs ?? 0,
+        status: s.status,
+      }));
+
+      this._onTelemetryUpdate({
+        steps,
+        budgetUsd: state.budgetUsd ?? 0,
+      });
+    } catch {
+      // ignore parse errors
+    }
+  }
+}
+
 export interface BridgeConfig {
   workspaceRoot: string;
   apiKey?: string;
@@ -97,6 +227,8 @@ export interface BridgeConfig {
   onAgentStatus: (status: AgentStatus) => void;
   onDecision: (decision: Decision) => void;
   onError: (error: string) => void;
+  onAuditEvent?: (event: any) => void;
+  onTelemetryUpdate?: (update: TelemetryUpdate) => void;
 }
 
 interface RunSummary {
@@ -138,6 +270,9 @@ export class EngineBridge {
   private readonly _onAgentStatus: BridgeConfig["onAgentStatus"];
   private readonly _onDecision: BridgeConfig["onDecision"];
   private readonly _onError: BridgeConfig["onError"];
+  private readonly _onAuditEvent: BridgeConfig["onAuditEvent"];
+  private readonly _onTelemetryUpdate: BridgeConfig["onTelemetryUpdate"];
+  private readonly _auditWatcher: AuditWatcher;
 
   private readonly _loader: PipelineLoader;
   private readonly _registry: AgentRegistry;
@@ -166,6 +301,12 @@ export class EngineBridge {
     this._onAgentStatus = config.onAgentStatus;
     this._onDecision = config.onDecision;
     this._onError = config.onError;
+    this._onAuditEvent = config.onAuditEvent;
+    this._onTelemetryUpdate = config.onTelemetryUpdate;
+    this._auditWatcher = new AuditWatcher(
+      (event) => this._onAuditEvent?.(event),
+      (update) => this._onTelemetryUpdate?.(update),
+    );
 
     this._loader = new PipelineLoader({ workspaceRoot: this._workspaceRoot });
     this._registry = new AgentRegistry(this._workspaceRoot);
@@ -368,6 +509,9 @@ export class EngineBridge {
     this._runStore.ensureRunDir(runId);
     this._runStore.saveState(run);
 
+    const runDir = this._runStore.getRunDir(runId);
+    this._auditWatcher.start(runDir);
+
     this._signal = new AbortController();
     this._gateResolvers.clear();
 
@@ -426,6 +570,7 @@ export class EngineBridge {
       this._log.appendLine(`[bridge] orchestrator error: ${msg}`);
       this._onError(msg);
     } finally {
+      this._auditWatcher.stop();
       try {
         this._runStore.saveState(run);
       } catch {
