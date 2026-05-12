@@ -94,6 +94,14 @@
       {
         "command": "prism.setApiKey",
         "title": "PRISM: Set API Key (SecretStorage)"
+      },
+      {
+        "command": "prism.exportAuditMarkdown",
+        "title": "PRISM: Export run report (Markdown)"
+      },
+      {
+        "command": "prism.exportAuditCsv",
+        "title": "PRISM: Export run report (CSV)"
       }
     ],
     "configuration": {
