@@ -33,6 +33,36 @@ export interface StepStateSummary {
       lines: string[];
     }>;
   };
+  tokensIn?: number;
+  tokensOut?: number;
+  tokensCachedIn?: number;
+  costUsd?: number;
+  provider?: string;
+  startedAtMs?: number;
+  completedAtMs?: number;
+}
+
+export interface TelemetryStep {
+  stepId: string;
+  stepName: string;
+  agent: string;
+  model: string;
+  provider: string;
+  tokensIn: number;
+  tokensOut: number;
+  tokensCachedIn: number;
+  costUsd: number;
+  startedAtMs: number;
+  completedAtMs: number;
+  status: string;
+}
+
+export interface AuditEvent {
+  type: string;
+  runId: string;
+  ts: number;
+  stepId?: string;
+  [key: string]: any;
 }
 
 export interface BridgeState {
@@ -96,6 +126,9 @@ export function useExtensionState() {
   const [verifyInFlight, setVerifyInFlight] = useState(false);
   const [connected, setConnected] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [telemetrySteps, setTelemetrySteps] = useState<TelemetryStep[]>([]);
+  const [auditEvents, setAuditEvents] = useState<AuditEvent[]>([]);
+  const [budgetUsd, setBudgetUsd] = useState(0);
 
   const send = useCallback((msg: Record<string, unknown>) => {
     if (vscodeApi) {
@@ -158,6 +191,16 @@ export function useExtensionState() {
         case "error":
           setError(msg.message ?? "Unknown error");
           break;
+        case "telemetry_update":
+          if (msg.steps) setTelemetrySteps(msg.steps);
+          if (msg.budgetUsd !== undefined) setBudgetUsd(msg.budgetUsd);
+          break;
+        case "audit_event":
+          setAuditEvents((prev) => [...prev.slice(-500), msg.event]);
+          break;
+        case "audit_log":
+          if (msg.events) setAuditEvents(msg.events);
+          break;
         default:
           break;
       }
@@ -182,5 +225,8 @@ export function useExtensionState() {
     connected,
     error,
     send,
+    telemetrySteps,
+    auditEvents,
+    budgetUsd,
   };
 }

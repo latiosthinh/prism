@@ -45,6 +45,9 @@ const App: React.FC = () => {
     settings,
     verifyResult,
     verifyInFlight,
+    telemetrySteps,
+    auditEvents,
+    budgetUsd,
   } = useExtensionState();
 
   const handleSelect = (name: string): void => {
@@ -217,6 +220,9 @@ const App: React.FC = () => {
               events={events}
               decisions={decisions}
               send={send}
+              telemetrySteps={telemetrySteps}
+              auditEvents={auditEvents}
+              budgetUsd={budgetUsd}
             />
           )}
 

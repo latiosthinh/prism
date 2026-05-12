@@ -3,11 +3,14 @@ import { IdeaInput, type RunMeta } from "./IdeaInput.js";
 import { StepCard } from "./StepCard.js";
 import { AgentStream } from "./AgentStream.js";
 import { DecisionLog } from "./DecisionLog.js";
+import { ObservabilityPanel } from "./ObservabilityPanel.js";
 import { Icon } from "./Icon.js";
 import type {
   AgentEvent,
   BridgeState,
   Decision,
+  TelemetryStep,
+  AuditEvent,
 } from "../hooks/useExtensionState.js";
 
 interface PipelineProps {
@@ -16,6 +19,9 @@ interface PipelineProps {
   events: AgentEvent[];
   decisions: Decision[];
   send: (msg: Record<string, unknown>) => void;
+  telemetrySteps: TelemetryStep[];
+  auditEvents: AuditEvent[];
+  budgetUsd: number;
 }
 
 const formatElapsed = (ms: number): string => {
@@ -33,6 +39,9 @@ export const Pipeline: React.FC<PipelineProps> = ({
   events,
   decisions,
   send,
+  telemetrySteps,
+  auditEvents,
+  budgetUsd,
 }) => {
   const [submittedIdea, setSubmittedIdea] = useState<string | null>(null);
   const [startTime, setStartTime] = useState<number | null>(null);
@@ -198,6 +207,25 @@ export const Pipeline: React.FC<PipelineProps> = ({
 
       {/* Decision Log */}
       <DecisionLog decisions={decisions} />
+
+      {/* Observability Panel */}
+      {state && (state.runId || telemetrySteps.length > 0 || auditEvents.length > 0) && (
+        <ObservabilityPanel
+          steps={telemetrySteps}
+          auditEvents={auditEvents}
+          runStartMs={state.steps[0]?.startedAtMs ?? Date.now()}
+          runDurationMs={
+            state.steps.length > 0
+              ? (state.steps[state.steps.length - 1]?.completedAtMs ?? Date.now()) -
+                (state.steps[0]?.startedAtMs ?? Date.now())
+              : 0
+          }
+          isRunning={isRunning}
+          budgetUsd={budgetUsd}
+          onExportMarkdown={() => send({ type: "exportAuditMarkdown" })}
+          onExportCsv={() => send({ type: "exportAuditCsv" })}
+        />
+      )}
 
       {/* Floating footer - Manual review gate */}
       {inReviewStep && (
