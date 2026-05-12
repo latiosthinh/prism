@@ -740,6 +740,10 @@ export class EngineBridge {
     return this._runStore.loadState(runId);
   }
 
+  getCurrentRunId(): string | null {
+    return this._currentRun?.runId ?? null;
+  }
+
   getBridgeState(): BridgeState {
     const run = this._currentRun;
     const pipeline = this._activePipeline ?? undefined;

@@ -548,6 +548,46 @@ class PipelinePanel {
           });
           break;
         }
+        case "exportAuditMarkdown": {
+          const runId = this._bridge.getCurrentRunId();
+          if (!runId) {
+            vscode.window.showWarningMessage("No active run to export.");
+            break;
+          }
+          const saveUri = await vscode.window.showSaveDialog({
+            defaultUri: vscode.Uri.file(path.join(this._wsRoot, `${runId}-audit.md`)),
+            filters: { "Markdown": ["md"] },
+            title: "Export Audit Report as Markdown",
+          });
+          if (!saveUri) break;
+          const runDir = path.join(this._wsRoot, ".PRISM", "runs", runId);
+          const { exportAuditMarkdown } = await import("../engine/audit/exporters/markdown.js");
+          const content = exportAuditMarkdown(runDir);
+          const fs = await import("fs");
+          fs.writeFileSync(saveUri.fsPath, content, "utf8");
+          vscode.window.showInformationMessage(`Audit report exported to ${path.basename(saveUri.fsPath)}`);
+          break;
+        }
+        case "exportAuditCsv": {
+          const runId = this._bridge.getCurrentRunId();
+          if (!runId) {
+            vscode.window.showWarningMessage("No active run to export.");
+            break;
+          }
+          const saveUri = await vscode.window.showSaveDialog({
+            defaultUri: vscode.Uri.file(path.join(this._wsRoot, `${runId}-audit.csv`)),
+            filters: { "CSV": ["csv"] },
+            title: "Export Audit Report as CSV",
+          });
+          if (!saveUri) break;
+          const runDir = path.join(this._wsRoot, ".PRISM", "runs", runId);
+          const { exportAuditCsv } = await import("../engine/audit/exporters/csv.js");
+          const content = exportAuditCsv(runDir);
+          const fs = await import("fs");
+          fs.writeFileSync(saveUri.fsPath, content, "utf8");
+          vscode.window.showInformationMessage(`Audit report exported to ${path.basename(saveUri.fsPath)}`);
+          break;
+        }
         default:
           this._log.appendLine(`[panel] Unknown message type: ${msg.type}`);
       }
