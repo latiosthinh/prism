@@ -20,6 +20,7 @@ import { AgentRegistry } from "../agents/registry.js";
 import { PipelineValidator } from "../pipeline/validator.js";
 import { SkillLoader } from "../artifacts/skill-loader.js";
 import { evaluateCondition } from "../pipeline/conditions.js";
+import { PrismBudgetError } from "../errors/budget-error.js";
 
 export interface OrchestratorConfig {
   cwd: string;
@@ -192,6 +193,39 @@ export class LoopOrchestrator {
         this.machine.setRunStatus(run, "cancelled");
         decision("run_cancelled", "Pipeline cancelled by user");
         return;
+      }
+
+      const warnEmitted = { value: false };
+      try {
+        this.checkBudget(run, pipeline, decision, warnEmitted);
+      } catch (err) {
+        if (err instanceof PrismBudgetError) {
+          this.machine.setRunStatus(run, "failed");
+          return;
+        }
+        throw err;
+      }
+
+      const budgetUsd = pipeline.budget_usd ?? 0;
+      if (budgetUsd > 0) {
+        const spent = this.totalRunCost(run);
+        const groupSteps = groups[g].filter((sid) => {
+          const s = run.steps[sid];
+          return s && !this.machine.isStepComplete(s.status);
+        });
+        let estimatedGroupCost = 0;
+        for (const sid of groupSteps) {
+          const stepDef = pipeline.steps.find((s) => s.id === sid);
+          estimatedGroupCost += this.estimateStepCost(stepDef);
+        }
+        if (spent + estimatedGroupCost > budgetUsd) {
+          decision(
+            "run_failed",
+            `Budget exceeded: parallel group would exceed budget (spent $${spent.toFixed(4)} + est $${estimatedGroupCost.toFixed(4)} > $${budgetUsd.toFixed(2)})`,
+          );
+          this.machine.setRunStatus(run, "failed");
+          return;
+        }
       }
 
       const group = groups[g].filter((sid) => {
@@ -559,11 +593,22 @@ export class LoopOrchestrator {
     }
 
     let i = resumeIdx;
+    const warnEmitted = { value: false };
     while (i < order.length) {
       if (signal?.aborted) {
         this.machine.setRunStatus(run, "cancelled");
         decision("run_cancelled", "Pipeline cancelled by user");
         return;
+      }
+
+      try {
+        this.checkBudget(run, pipeline, decision, warnEmitted);
+      } catch (err) {
+        if (err instanceof PrismBudgetError) {
+          this.machine.setRunStatus(run, "failed");
+          return;
+        }
+        throw err;
       }
 
       const stepId = order[i];
@@ -1019,6 +1064,68 @@ export class LoopOrchestrator {
       if (group.steps.includes(stepId)) return group;
     }
     return null;
+  }
+
+  private totalRunCost(run: PipelineRunState): number {
+    let total = 0;
+    for (const step of Object.values(run.steps)) {
+      total += step.costUsd ?? 0;
+    }
+    return total;
+  }
+
+  private checkBudget(
+    run: PipelineRunState,
+    pipeline: PipelineDefinition,
+    decision: (type: Decision["type"], summary: string, detail?: string, stepId?: string) => void,
+    warnEmitted: { value: boolean },
+  ): void {
+    const budgetUsd = pipeline.budget_usd ?? 0;
+    if (budgetUsd <= 0) return;
+
+    const spent = this.totalRunCost(run);
+    const warnPct = (pipeline.budget_warn_pct ?? 80) / 100;
+    const remaining = budgetUsd - spent;
+
+    if (spent >= budgetUsd) {
+      decision(
+        "run_failed",
+        `Budget exceeded: spent $${spent.toFixed(4)} of $${budgetUsd.toFixed(2)} budget`,
+        `Remaining: $${remaining.toFixed(4)}`,
+      );
+      throw new PrismBudgetError(
+        `Run aborted: spent $${spent.toFixed(4)} exceeds budget of $${budgetUsd.toFixed(2)}`,
+        spent,
+        budgetUsd,
+      );
+    }
+
+    if (!warnEmitted.value && spent >= budgetUsd * warnPct) {
+      warnEmitted.value = true;
+      decision(
+        "user_note",
+        `Budget warning: spent $${spent.toFixed(4)} of $${budgetUsd.toFixed(2)} (${((spent / budgetUsd) * 100).toFixed(0)}%)`,
+        `Remaining: $${remaining.toFixed(4)}`,
+      );
+    }
+  }
+
+  private estimateStepCost(stepDef: NonNullable<ReturnType<PipelineDefinition["steps"]["find"]>>): number {
+    const defaults: Record<string, number> = {
+      "idea-expander": 0.05,
+      "requirements-engineer": 0.06,
+      architect: 0.08,
+      "task-generator": 0.04,
+      executor: 0.12,
+      critic: 0.05,
+      "test-writer": 0.04,
+      reporter: 0.06,
+      "security-reviewer": 0.07,
+      "performance-reviewer": 0.06,
+      "docs-writer": 0.05,
+      "migration-planner": 0.07,
+    };
+    return stepDef?.budget_usd ?? defaults[stepDef?.agent ?? ""] ?? 0.05;
   }
 
   private sleep(ms: number): Promise<void> {
